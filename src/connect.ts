@@ -9,6 +9,8 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import net, { type Socket } from "node:net";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { baseDir, ensureBaseDir, logPath, socketPath, spawnLockPath } from "./paths.ts";
 import {
   encodeLine,
@@ -21,6 +23,21 @@ import {
 const POLL_INTERVAL_MS = 100;
 const DEAD_PID_GRACE_MS = 500;
 const DEFAULT_TIMEOUT_SECONDS = 120;
+
+// The CLI entry point that startChain runs as the __spawn intermediate.
+// Resolved from this module's own location, never from process.argv[1]:
+// when a test runner imports this module, argv[1] is the test file, and
+// re-running it from startChain made each test process start two more,
+// without limit. cli sits next to this file with the same extension (.ts
+// in src, .js in dist).
+const CLI_PATH = fileURLToPath(
+  new URL(`./cli${path.extname(fileURLToPath(import.meta.url))}`, import.meta.url),
+);
+
+// Set in the environment of every chain startChain starts. A process that
+// already has it is inside a chain, so starting another one from there is
+// a recursion, and startChain refuses it.
+const CHAIN_MARKER = "MCP_AUTOSPAWN_IN_CHAIN";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -120,14 +137,20 @@ async function startChain(
   fingerprint: string,
   spawnCommand: readonly string[],
 ): Promise<number> {
+  if (process.env[CHAIN_MARKER]) {
+    throw new Error("refusing to start a chain from inside another chain");
+  }
+  // No process.execArgv: under a test runner it holds the runner's own
+  // flags, and neither .ts (type stripping) nor dist .js needs a flag.
   const child = spawn(
     process.execPath,
-    [...process.execArgv, process.argv[1] ?? "", "__spawn", log, "--", ...spawnCommand],
+    [CLI_PATH, "__spawn", log, "--", ...spawnCommand],
     {
       detached: true,
       stdio: ["ignore", "pipe", "inherit"],
       env: {
         ...process.env,
+        [CHAIN_MARKER]: "1",
         MCP_AUTOSPAWN_FINGERPRINT: fingerprint,
         MCP_AUTOSPAWN_SOCKET: sockPath,
       },
