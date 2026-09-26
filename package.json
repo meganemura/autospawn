@@ -1,0 +1,35 @@
+{
+  "name": "mcp-autospawn",
+  "version": "0.1.0",
+  "description": "Attach-or-spawn launcher for stdio MCP servers, so a secret-resolving wrapper starts once and every client shares it.",
+  "type": "module",
+  "bin": {
+    "mcp-autospawn": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=24.10"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && chmod +x dist/cli.js",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
+  },
+  "license": "MIT",
+  "author": "meganemura",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/meganemura/mcp-autospawn.git"
+  },
+  "bugs": {
+    "url": "https://github.com/meganemura/mcp-autospawn/issues"
+  },
+  "homepage": "https://github.com/meganemura/mcp-autospawn#readme",
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "@types/node": "24.13.6"
+  }
+}

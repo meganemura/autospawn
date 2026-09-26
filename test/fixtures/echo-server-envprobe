@@ -1,0 +1,5 @@
+#!/bin/sh
+# Prints the env var fake-wrapper adds as its first line of output, then
+# relays stdin to stdout byte for byte like echo-server.
+printf 'env:%s\n' "${FAKE_WRAPPER_SECRET:-missing}"
+exec cat

@@ -1,0 +1,12 @@
+#!/bin/sh
+# Like fake-wrapper, but records its own pid and sleeps before exec so a
+# test can kill it mid-startup.
+if [ -n "$FAKE_WRAPPER_COUNT_FILE" ]; then
+  printf 'x' >> "$FAKE_WRAPPER_COUNT_FILE"
+fi
+if [ -n "$SLOW_WRAPPER_PID_FILE" ]; then
+  echo "$$" >> "$SLOW_WRAPPER_PID_FILE"
+fi
+sleep "${SLOW_WRAPPER_SLEEP:-2}"
+export FAKE_WRAPPER_SECRET=shh
+exec "$@"

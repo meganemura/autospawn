@@ -1,0 +1,9 @@
+#!/bin/sh
+# Stands in for `op run`: records that it ran, adds an env var the way a
+# secrets wrapper would, then execs into the real command (so the pid the
+# caller observes belongs to the eventual serve process too).
+if [ -n "$FAKE_WRAPPER_COUNT_FILE" ]; then
+  printf 'x' >> "$FAKE_WRAPPER_COUNT_FILE"
+fi
+export FAKE_WRAPPER_SECRET=shh
+exec "$@"

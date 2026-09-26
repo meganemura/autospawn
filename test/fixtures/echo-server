@@ -1,0 +1,3 @@
+#!/bin/sh
+# A fake MCP server: relays stdin to stdout byte for byte.
+exec cat
