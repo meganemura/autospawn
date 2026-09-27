@@ -66,6 +66,40 @@ test("--idle-timeout ends the resident once connections drop to zero", async (t)
   await waitFor(() => !fs.existsSync(sockPath), { timeoutMs: 5000 });
 });
 
+test("serve writes its own diagnostics to the chain's log, marked [serve] and timestamped", async (t) => {
+  const dir = makeStateDir();
+  const env = baseEnv(dir);
+  const sockPath = path.join(dir, "servelog.sock");
+  const logPath = path.join(dir, "servelog.log");
+  t.after(() => {
+    void runCli(["stop", "--name", "servelog"], { env });
+    removeStateDir(dir);
+  });
+
+  const connectResult = await runCli(
+    ["connect", "--name", "servelog", "--", ...chainArgs("echo-server", ["--idle-timeout", "1"])],
+    { env, input: "hi\n" },
+  );
+  assert.equal(connectResult.code, 0, connectResult.stderr);
+  await waitFor(() => !fs.existsSync(sockPath), { timeoutMs: 5000 });
+
+  // serve never opens the log itself: its stderr is the chain's log file,
+  // so its own lines have to arrive there through that descriptor.
+  assert.match(
+    fs.readFileSync(logPath, "utf8"),
+    /^\d{4}-\d{2}-\d{2}T[\d:.]+Z \[serve\] idle for 1s, stopping$/m,
+  );
+});
+
+test("serve run directly, without AUTOSPAWN_SOCKET, explains and exits 2", async () => {
+  const env = { ...process.env };
+  delete env.AUTOSPAWN_SOCKET;
+  const result = await runCli(["serve", "--", path.join(fixturesDir, "echo-server")], { env });
+  assert.equal(result.code, 2);
+  assert.match(result.stderr, /AUTOSPAWN_SOCKET is not set/);
+  assert.match(result.stderr, /started by 'autospawn connect', not run directly/);
+});
+
 test("stop: an error reply from the resident is printed and exits 1", async (t) => {
   // A fake resident (not the real serve.ts) that replies with an error to
   // any "stop" request, so this exercises stop.ts's own error-reply

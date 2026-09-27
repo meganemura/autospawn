@@ -5,8 +5,8 @@
     "command": "node --test"
   },
   "coverageAnalysis": "off",
-  "timeoutMS_comment": "The default (5000ms plus 1.5x the dry run time) made every mutant of connect.ts time out, with 0 killed. With coverageAnalysis off, every mutant reruns the whole suite, and each test starts several real subprocesses, so contention alone pushed an unmutated run past the default. With 60000, the same file gave 87 killed, 29 timeout, and 67 survived. A time limit that is too short turns slow runs into false detections, so this raises it for the whole project.",
-  "timeoutMS": 60000,
+  "timeoutMS_comment": "Stryker waits timeoutMS plus 1.5x the dry run time before it counts a mutant as a timeout. A mutant that stops serve from answering always ends that way, so this value sets the cost of each such mutant. 60000 was needed while 9 runners overloaded the machine and an unmutated run could pass the default. With 2 or 3 runners, 15000 gives about 30 seconds per run, and a slow but correct run still fits.",
+  "timeoutMS": 15000,
   "mutate": [
     "src/**/*.ts"
   ],

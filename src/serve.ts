@@ -46,7 +46,13 @@ function statOwnership(sockPath: string): Ownership | null {
 }
 
 function sameOwnership(a: Ownership, b: Ownership | null): boolean {
-  return b !== null && a.dev === b.dev && a.ino === b.ino;
+  if (b === null) return false;
+  // Stryker disable next-line ConditionalExpression: the socket and its
+  // replacement live in the same directory, so they share a device and
+  // only the inode can differ. dev guards a case no test can build: a
+  // filesystem mounted over the state directory between two checks.
+  const sameDevice = a.dev === b.dev;
+  return sameDevice && a.ino === b.ino;
 }
 
 function requireSocket(): never {

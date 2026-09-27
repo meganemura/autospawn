@@ -106,6 +106,35 @@ test("pkill -P <connect pid> during startup does not reach the resident chain", 
   assert.equal(fs.readFileSync(countFile, "utf8").length, 1);
 });
 
+// The other ownership tests replace the path with a live socket, where a
+// comparison that skips the "path is gone" case still gives the right
+// answer. Here nothing replaces it, so the check sees no file at all, and
+// serve must treat that as a lost race and exit cleanly, not crash.
+test("a serve whose socket path is removed, with nothing in its place, exits 0", async (t) => {
+  const dir = makeStateDir();
+  const sockPath = path.join(dir, "vanished.sock");
+  t.after(() => removeStateDir(dir));
+
+  // A long idle timeout, so only the ownership check can end it in time.
+  const serve = startServeDirect(sockPath, "test-fingerprint", "echo-server", 60);
+  t.after(() => {
+    if (!isDead(serve.pid!)) serve.kill("SIGKILL");
+  });
+  const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) =>
+    serve.once("exit", (code, signal) => resolve({ code, signal })),
+  );
+  await waitFor(() => fs.existsSync(sockPath), { timeoutMs: 5000 });
+
+  fs.unlinkSync(sockPath);
+
+  const result = await Promise.race([
+    exited,
+    new Promise<"still running">((resolve) => setTimeout(() => resolve("still running"), 5000)),
+  ]);
+  assert.deepEqual(result, { code: 0, signal: null });
+  assert.equal(fs.existsSync(sockPath), false, "serve must not recreate the path");
+});
+
 test("a serve that loses the ownership race steps aside without deleting the winner's socket", async (t) => {
   const dir = makeStateDir();
   const sockPath = path.join(dir, "race14.sock");
