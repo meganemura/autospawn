@@ -22,7 +22,11 @@ deletes the socket file at the path, which now belongs to the new
 resident. The new resident's own check then finds its path gone, and it
 exits once it has no running children. The next connect starts another
 resident, and asks for approval again.
-Comparing the file's change time as well would close this gap.
+
+This is more likely on Linux than on macOS: the test suite shows that a
+file created right after another one was removed, in the same directory,
+can get the same inode number on Linux. Comparing the file's change time
+as well would close this gap.
 
 ## A connection at the moment of the idle timeout ends the resident
 

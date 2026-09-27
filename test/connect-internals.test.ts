@@ -185,14 +185,17 @@ test("acquireOrWaitForLock: a stale existing lock is reclaimed, making this the 
   const lockPath = path.join(dir, "x.spawn");
   try {
     tryCreateLock(lockPath);
-    const inodeBefore = fs.statSync(lockPath).ino;
     // Backdate the lock instead of passing 0ms: mtimeMs has sub-millisecond
     // precision and Date.now() does not, so a lock read right after it is
     // created can have a small negative age.
     const tenSecondsAgo = new Date(Date.now() - 10_000);
     fs.utimesSync(lockPath, tenSecondsAgo, tenSecondsAgo);
     assert.equal(acquireOrWaitForLock(lockPath, 1000), "holder");
-    assert.notEqual(fs.statSync(lockPath).ino, inodeBefore, "lock file must be a fresh inode");
+    // A reclaimed lock is a new file. Its inode number can repeat, since
+    // Linux reuses a freed inode at once, so check its age instead: the
+    // backdated file is gone, and the new one is fresh.
+    const ageMs = Date.now() - fs.statSync(lockPath).mtimeMs;
+    assert.ok(ageMs < 5000, `lock file must be newly created, but is ${ageMs}ms old`);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
