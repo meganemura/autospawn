@@ -9,16 +9,6 @@ them leaks a secret to another user.
 returned. An MCP client does not look at it, but a command-line caller
 that checks `$?` cannot tell success from failure. See ADR 0007.
 
-## A connection at the moment of the idle timeout ends the resident
-
-The idle timer starts at startup, and again when the last child closes. A
-connection that arrives just before it fires, while `serve` still reads
-the connection's header, is served in full: closing the server stops new connections, and
-leaves the accepted ones alone. But the resident exits once that
-connection ends, where it would otherwise have stayed for another idle
-period. The next connect then starts a new resident, and asks for
-approval again.
-
 ## Renaming a resident leaves the old one running
 
 The name is the only link between a config and its resident. After a

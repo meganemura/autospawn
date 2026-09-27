@@ -4,6 +4,7 @@
 // serve may never exit on its own.
 import { type ChildProcess } from "node:child_process";
 import fs from "node:fs";
+import net from "node:net";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
@@ -101,6 +102,31 @@ test("one connection closing does not start the idle timeout while another is op
   assert.equal(await exitWithin(serve, 2500), "still running");
 
   second.end();
+  assert.deepEqual(await exitWithin(serve, 5000), { code: 0, signal: null });
+});
+
+// A client that connects just before the idle timeout, and is still
+// sending its header when the timer would fire, must get its child and
+// keep the resident alive. Closing the server at that point would remove
+// the socket file, so the next client would start a new resident.
+test("a connection still sending its header holds off the idle timeout", async (t) => {
+  const dir = stateDir(t);
+  const sockPath = path.join(dir, "slowheader.sock");
+  const serve = startServeDirect(sockPath, FINGERPRINT, "echo-server", 1);
+  killOnCleanup(t, serve);
+  await waitFor(() => fs.existsSync(sockPath), { timeoutMs: 5000 });
+
+  const sock = net.connect(sockPath);
+  await new Promise<void>((resolve, reject) => {
+    sock.once("connect", resolve);
+    sock.once("error", reject);
+  });
+  // Past the 1s idle timeout, and still inside the 5s header timeout.
+  await sleep(1800);
+  assert.equal(fs.existsSync(sockPath), true, "the resident must still own its socket");
+  sock.end();
+
+  // With nothing left, the idle timeout runs again and ends the resident.
   assert.deepEqual(await exitWithin(serve, 5000), { code: 0, signal: null });
 });
 

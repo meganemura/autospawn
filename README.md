@@ -161,8 +161,9 @@ to come up — long enough for a person to approve a 1Password prompt.
 Listens on the resident's socket and starts `<command...>` as a fresh child
 for every connection it accepts. Only `connect` starts `serve`; running it
 directly fails, since it needs environment variables that `connect` sets.
-With `--idle-timeout`, serve exits once it has had no running children for
-that many seconds. Without it, serve runs until stopped.
+With `--idle-timeout`, serve exits once it has had no running children,
+and no connection being set up, for that many seconds. Without it, serve
+runs until stopped.
 
 ### `autospawn stop --name <name>`
 

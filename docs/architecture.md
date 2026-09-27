@@ -171,10 +171,11 @@ alone, since it was verified that no cleanup call runs for a plain
 - `stop`, SIGTERM, and SIGINT all run the same shutdown: SIGTERM every
   child, then `server.close()` (which unlinks the resident's own socket,
   since it still owns the path at that point), then exit 0.
-- With `--idle-timeout`, a timer for that many seconds starts at startup
-  and whenever the last running child closes. An accepted attach, which
-  starts a child, cancels it. A stop, a header still being read, or a
-  refused attach does not. Firing runs the same shutdown.
+- With `--idle-timeout`, a timer for that many seconds runs while there is
+  no running child and no connection being handled. Accepting a
+  connection cancels it. It starts at startup, when the last child closes,
+  and when a connection ends without a child (a refused attach, a bad
+  header). Firing runs the same shutdown.
 - A resident that loses the ownership race above runs a different exit path
   (see the previous section): no `close()`, no unlink, just `process.exit()`
   once it has no running children.

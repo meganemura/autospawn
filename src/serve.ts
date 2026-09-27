@@ -80,20 +80,31 @@ export async function serve(
   ensureBaseDir(path.dirname(sockPath));
 
   const children = new Set<ChildProcess>();
+  // Connections accepted whose handling has not finished: still reading the
+  // header, or refused and not yet closed. A connection that becomes a child
+  // leaves this count when handleConnection returns.
+  let pending = 0;
   let raceLost = false;
   let idleTimer: NodeJS.Timeout | null = null;
 
   const server = net.createServer({ allowHalfOpen: true });
 
-  // Called at startup and when a child closes. Starting a child clears the
-  // timer (spawnChild), so the timer can only fire with no children.
+  // Called at startup, when a child closes, and when a connection's handling
+  // ends. The timer runs only while nothing is running and nothing is being
+  // set up: a client that connects just before the timeout gets its child,
+  // and the resident stays.
   function scheduleIdleCheck(): void {
     if (idleTimeoutSeconds === null) return;
-    if (children.size > 0) return;
+    if (children.size > 0 || pending > 0) return;
     idleTimer = setTimeout(() => {
       logLine(`idle for ${idleTimeoutSeconds}s, stopping`);
       void shutdownOwned();
     }, idleTimeoutSeconds * 1000);
+  }
+
+  function cancelIdleCheck(): void {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = null;
   }
 
   function checkOwnership(ownership: Ownership): void {
@@ -131,10 +142,18 @@ export async function serve(
   // No ownership check here: once the path points at another resident, no
   // new connection can reach this server, since clients connect by path.
   server.on("connection", (socket: Socket) => {
-    // Stryker disable next-line ArrowFunction: handleConnection settles every
-    // error path itself, so this catch never runs today. It stays so that a
-    // future throw drops one connection instead of crashing the resident.
-    handleConnection(socket).catch(() => socket.destroy());
+    pending += 1;
+    cancelIdleCheck();
+    handleConnection(socket)
+      // Stryker disable next-line ArrowFunction: handleConnection settles
+      // every error path itself, so this catch never runs today. It stays
+      // so that a future throw drops one connection instead of crashing
+      // the resident.
+      .catch(() => socket.destroy())
+      .finally(() => {
+        pending -= 1;
+        scheduleIdleCheck();
+      });
   });
 
   async function handleConnection(socket: Socket): Promise<void> {
@@ -175,10 +194,6 @@ export async function serve(
 
   function spawnChild(socket: Socket): void {
     const [cmd, ...args] = serverCommand;
-    if (idleTimer) {
-      clearTimeout(idleTimer);
-      idleTimer = null;
-    }
     let child: ChildProcess;
     try {
       child = spawn(cmd!, args, {

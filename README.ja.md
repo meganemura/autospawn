@@ -149,7 +149,7 @@ autospawn connect --name example-cli -- \
 常駐プロセスのソケットで待ち受け、受け付けた接続ごとに `<command...>` を新しい子プロセスとして起動します。
 `connect` だけが `serve` を起動します。
 `connect` が設定する環境変数が必要なため、直接実行すると失敗します。
-`--idle-timeout` を指定すると、指定した秒数にわたって実行中の子プロセスがない状態が続いた時点で serve が終了します。
+`--idle-timeout` を指定すると、指定した秒数にわたって実行中の子プロセスも準備中の接続もない状態が続いた時点で serve が終了します。
 指定しない場合、serve は停止されるまで動作します。
 
 ### `autospawn stop --name <name>`

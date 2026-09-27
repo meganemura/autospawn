@@ -2,6 +2,9 @@
 
 ## (unreleased)
 
+- Accepting a connection now cancels the idle timer. A client that
+  connected just before the timeout used to get its child, but the
+  resident then exited, and the next client had to start a new one.
 - A resident now also compares its socket's change time when it checks
   that the path is still its own. On Linux, a replaced socket could get
   the old inode number, and the resident did not see the replacement. A
