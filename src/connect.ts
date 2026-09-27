@@ -160,6 +160,12 @@ export async function startChain(
       },
     },
   );
+  // Stryker disable next-line CallExpression: this process only ever ends
+  // through an explicit process.exit() (fail(), attachAndRelay's own exit
+  // calls) or by hanging forever in the relay (attachAndRelay's returned
+  // promise never resolves) -- no path here relies on the event loop
+  // draining naturally, so unref'ing this child never changes whether or
+  // when the process exits.
   child.unref();
 
   const pid = await new Promise<number>((resolve, reject) => {
@@ -168,6 +174,11 @@ export async function startChain(
       buf += chunk.toString("utf8");
       const idx = buf.indexOf("\n");
       if (idx !== -1) {
+        // Stryker disable next-line UnaryOperator,MethodExpression:
+        // Number.parseInt stops at the first non-digit character it meets,
+        // and "\n" is never a digit, so parsing the full buf instead of
+        // buf.slice(0, idx) -- or slicing at +1 instead of idx -- stops at
+        // the same "\n" either way and yields the same number.
         const n = Number.parseInt(buf.slice(0, idx), 10);
         if (Number.isFinite(n)) resolve(n);
         else reject(new Error("__spawn did not report a pid"));
@@ -175,6 +186,11 @@ export async function startChain(
     });
     child.once("error", reject);
     child.once("close", (code) => {
+      // Stryker disable next-line ConditionalExpression: this only runs
+      // after the promise has already settled (resolve or reject above,
+      // both unconditional once idx !== -1), so forcing this to true makes
+      // reject() run against an already-settled promise -- a no-op, since
+      // a settled promise cannot change state.
       if (buf.indexOf("\n") === -1) {
         reject(new Error(`__spawn exited before reporting a pid (code ${code})`));
       }
@@ -210,6 +226,12 @@ export async function attachAndRelay(sock: Socket, fingerprint: string): Promise
   sock.on("close", () => {
     process.stdout.write("", () => process.exit(0));
   });
+  // Stryker disable next-line StringLiteral,ArrowFunction,CallExpression: measured (three
+  // probes: a same-process destroy(err), a destroy(err) from the accepting
+  // side, and a SIGKILL of the peer's whole process) that a unix domain
+  // socket's peer going away always surfaces here as "close" with
+  // hadError false, never as an "error" event -- found no deterministic
+  // way to reach this listener at all, in this process or the peer's.
   sock.on("error", () => process.exit(1));
   // readHeaderLine paused the socket after the reply line; resume it now
   // that the relay listener above is in place, so nothing sent right after
@@ -243,6 +265,10 @@ export async function connect(
     for (;;) {
       const sock = await tryConnect(sockPath);
       if (sock) return attachAndRelay(sock, fingerprint);
+      // Stryker disable next-line EqualityOperator: differs from > only at
+      // the exact millisecond deadline falls on, and this loop only checks
+      // the clock once per POLL_INTERVAL_MS (100ms) tick -- landing on
+      // that one millisecond is not a case a test can reach on purpose.
       if (Date.now() > deadline) {
         fail(`timed out after ${timeoutSeconds}s waiting for a resident`, log);
       }
@@ -270,11 +296,21 @@ export async function connect(
       if (!pidAlive(pid)) {
         deadPidGraceDeadline = Date.now() + DEAD_PID_GRACE_MS;
       }
-    } else if (Date.now() > deadPidGraceDeadline) {
-      releaseLock(lockPath);
-      fail("the spawned command exited before a resident answered", log);
+    } else {
+      // Stryker disable next-line EqualityOperator: differs from > only at
+      // the exact millisecond deadPidGraceDeadline falls on, and this loop
+      // only checks the clock once per POLL_INTERVAL_MS (100ms) tick --
+      // landing on that one millisecond is not a case a test can reach on
+      // purpose.
+      if (Date.now() > deadPidGraceDeadline) {
+        releaseLock(lockPath);
+        fail("the spawned command exited before a resident answered", log);
+      }
     }
 
+    // Stryker disable next-line EqualityOperator: same reasoning as the
+    // waiter loop's own deadline check above -- unreachable at exactly the
+    // right millisecond under 100ms polling.
     if (Date.now() > deadline) {
       releaseLock(lockPath);
       fail(`timed out after ${timeoutSeconds}s waiting for a resident`, log);

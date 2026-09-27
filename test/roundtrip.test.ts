@@ -72,6 +72,20 @@ test("two connects share one resident (wrapper runs once)", async (t) => {
   assert.equal(fs.readFileSync(countFile, "utf8").length, 1, "wrapper should run exactly once");
 });
 
+test("connect: a successful holder connect leaves no spawn lock behind", async (t) => {
+  const dir = makeStateDir();
+  const countFile = path.join(dir, "count");
+  const env = baseEnv(dir);
+  t.after(() => {
+    void runCli(["stop", "--name", "lockcheck"], { env });
+    removeStateDir(dir);
+  });
+
+  const result = await connectRoundtrip("lockcheck", env, "hi\n", countFile);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(fs.existsSync(path.join(dir, "lockcheck.spawn")), false);
+});
+
 // The empty autospawn-vars line guards the chain marker. connect puts
 // AUTOSPAWN_IN_CHAIN, AUTOSPAWN_SOCKET, and AUTOSPAWN_FINGERPRINT into the
 // chain's environment, and serve must strip them before it starts the
