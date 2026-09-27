@@ -1,5 +1,7 @@
 # autospawn
 
+[日本語](README.ja.md)
+
 Attach-or-spawn launcher for programs that talk over stdin and stdout.
 A client starts `autospawn connect`. If a resident is already running,
 connect attaches to it. If not, connect starts one, and every later

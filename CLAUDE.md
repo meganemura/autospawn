@@ -4,6 +4,10 @@ This repository is public-facing: commit messages, code comments, and docs
 are English. The one entry point for users is `README.md`. Anything past
 introductory use goes in `docs/`.
 
+`README.ja.md` is the Japanese translation of `README.md`, one sentence
+per line, with code blocks identical to the English ones. Carry every
+change to `README.md` into it in the same commit.
+
 Record a new design decision as a new file in `docs/adr/`, following the
 existing ADRs' shape (Status / Context / Decision / Consequences / Rejected
 alternatives), and add it to `docs/README.md`'s index. Do not edit an
