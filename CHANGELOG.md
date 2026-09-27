@@ -2,6 +2,10 @@
 
 ## (unreleased)
 
+- A resident now also compares its socket's change time when it checks
+  that the path is still its own. On Linux, a replaced socket could get
+  the old inode number, and the resident did not see the replacement. A
+  chmod on the socket now makes the resident step aside.
 - `npm test` runs the suite under a process limit, through `scripts/test.sh`.
 - Publishing moves to GitHub Actions with an npm Trusted Publisher. See
   `docs/releasing.md`.

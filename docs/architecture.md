@@ -141,9 +141,14 @@ happened, since bind and listen already succeeded for B.
 Left unnoticed, B keeps running, keeps whatever secret its environment
 holds, and (absent `--idle-timeout`) never exits.
 
-`serve` guards against this by recording the socket path's inode and
-device right after a successful bind, then checking that the path still
-resolves to the same inode and device, once a second. There is no check
+`serve` guards against this by recording the socket path's device, inode,
+and change time right after it binds and chmods the socket, then checking
+that the path still resolves to the same three values, once a second. The
+inode alone would not do: Linux can give a socket created right after
+another one was removed the same inode number. The change time, in
+nanoseconds, tells the two apart. Its cost: a chmod or chown on the socket
+after that point also counts as a replacement, and the resident steps
+aside. There is no check
 on each new connection: clients connect by path, so once the path points
 elsewhere, no new client can reach this resident. A mismatch (or the path
 being gone) means this resident is no longer the one clients will reach.

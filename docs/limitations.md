@@ -9,25 +9,6 @@ them leaks a secret to another user.
 returned. An MCP client does not look at it, but a command-line caller
 that checks `$?` cannot tell success from failure. See ADR 0007.
 
-## An inode reused at once can hide a replaced socket
-
-A resident checks every second that its socket path still points at its
-own socket, by comparing the device and inode numbers (see "Losing
-ownership after binding" in architecture.md). If the socket file is
-removed and a new socket at the same path gets the same inode number
-straight away, the check does not see the change. The old resident then
-keeps running, unreachable, and forever without an idle timeout. With one,
-it runs its normal shutdown when the timeout fires, and `server.close()`
-deletes the socket file at the path, which now belongs to the new
-resident. The new resident's own check then finds its path gone, and it
-exits once it has no running children. The next connect starts another
-resident, and asks for approval again.
-
-This is more likely on Linux than on macOS: the test suite shows that a
-file created right after another one was removed, in the same directory,
-can get the same inode number on Linux. Comparing the file's change time
-as well would close this gap.
-
 ## A connection at the moment of the idle timeout ends the resident
 
 The idle timer starts at startup, and again when the last child closes. A

@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
+import { sameOwnership, statOwnership } from "../src/serve.ts";
 import {
   attachRaw,
   exitWithin,
@@ -33,6 +34,33 @@ function stateDir(t: TestContext): string {
   t.after(() => removeStateDir(dir));
   return dir;
 }
+
+// Linux can give a new file the inode number of one just removed, so a
+// replaced socket can match on device and inode. The change time is what
+// tells them apart.
+test("ownership: a file with the same device and inode but another change time is not the same", () => {
+  const owned = { dev: 1n, ino: 2n, ctimeNs: 3n };
+  assert.equal(sameOwnership(owned, { dev: 1n, ino: 2n, ctimeNs: 3n }), true);
+  assert.equal(sameOwnership(owned, { dev: 1n, ino: 2n, ctimeNs: 4n }), false);
+  assert.equal(sameOwnership(owned, { dev: 1n, ino: 9n, ctimeNs: 3n }), false);
+  assert.equal(sameOwnership(owned, null), false);
+});
+
+// The cost of checking the change time: a chmod on the path after serve
+// recorded it counts as a replacement. serve records it after its own
+// chmod for that reason.
+test("ownership: a chmod after the record counts as a change", async (t) => {
+  const dir = stateDir(t);
+  const file = path.join(dir, "probe");
+  fs.writeFileSync(file, "");
+  const before = statOwnership(file);
+  assert.ok(before);
+  assert.equal(sameOwnership(before, statOwnership(file)), true);
+  await sleep(10);
+  fs.chmodSync(file, 0o600);
+  assert.equal(sameOwnership(before, statOwnership(file)), false);
+  assert.equal(statOwnership(path.join(dir, "missing")), null);
+});
 
 test("serve without AUTOSPAWN_FINGERPRINT explains and exits 2", async (t) => {
   const dir = stateDir(t);

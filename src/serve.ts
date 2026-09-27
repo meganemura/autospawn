@@ -34,25 +34,30 @@ function childEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-type Ownership = { dev: number; ino: number };
+// Identifies the socket file this resident bound. The inode alone is not
+// enough: Linux gives a file created right after another one was removed
+// the same inode number, so a replaced socket can look like the old one.
+// The change time, in nanoseconds, tells them apart. It is read after
+// serve's own chmod, so that chmod does not count as a change.
+export type Ownership = { dev: bigint; ino: bigint; ctimeNs: bigint };
 
-function statOwnership(sockPath: string): Ownership | null {
+export function statOwnership(sockPath: string): Ownership | null {
   try {
-    const st = fs.statSync(sockPath);
-    return { dev: st.dev, ino: st.ino };
+    const st = fs.statSync(sockPath, { bigint: true });
+    return { dev: st.dev, ino: st.ino, ctimeNs: st.ctimeNs };
   } catch {
     return null;
   }
 }
 
-function sameOwnership(a: Ownership, b: Ownership | null): boolean {
+export function sameOwnership(a: Ownership, b: Ownership | null): boolean {
   if (b === null) return false;
   // Stryker disable next-line ConditionalExpression: the socket and its
   // replacement live in the same directory, so they share a device and
   // only the inode can differ. dev guards a case no test can build: a
   // filesystem mounted over the state directory between two checks.
   const sameDevice = a.dev === b.dev;
-  return sameDevice && a.ino === b.ino;
+  return sameDevice && a.ino === b.ino && a.ctimeNs === b.ctimeNs;
 }
 
 // connect always sets both variables. A serve without one of them was not
