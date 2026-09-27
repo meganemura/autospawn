@@ -3,6 +3,7 @@
 - [architecture.md](architecture.md): how the processes fit together at
   runtime, the handshake, and what happens in a race.
 - [limitations.md](limitations.md): known gaps that are not fixed yet.
+- [releasing.md](releasing.md): how a version reaches npm and GitHub.
 
 ## Design decisions
 

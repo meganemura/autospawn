@@ -1,0 +1,71 @@
+# Publishes the npm package for a v* tag.
+# Boundary: checkout the tag, run the release checks, and npm publish.
+# The GitHub Environment `publish` approves the run. npm authenticates
+# with that environment's OIDC token.
+name: Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: publish
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+          # A release build installs from the lockfile only. The setup-node
+          # package cache is a write path from other workflows.
+          package-manager-cache: false
+
+      - name: Require Node 24.10 and npm 11.5.1
+        run: |
+          node --version
+          npm --version
+          node <<'EOF'
+          const [nodeMajor, nodeMinor] = process.versions.node.split(".").map(Number);
+          if (nodeMajor < 24 || (nodeMajor === 24 && nodeMinor < 10)) {
+            console.error(`Node ${process.versions.node} is older than 24.10.0`);
+            process.exit(1);
+          }
+          const {execSync} = require("node:child_process");
+          const [major, minor, patch] = execSync("npm --version", {encoding: "utf8"})
+            .trim()
+            .split(".")
+            .map(Number);
+          if (!(major > 11 || (major === 11 && (minor > 5 || (minor === 5 && patch >= 1))))) {
+            console.error(`npm ${major}.${minor}.${patch} is older than 11.5.1`);
+            process.exit(1);
+          }
+          EOF
+
+      - name: Match the tag to package.json
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match package.json version ${pkg}" >&2
+            exit 1
+          fi
+
+      - run: npm ci
+      - run: npm run build
+      - name: Refuse a build that changes the tagged tree
+        run: |
+          # dist/ is ignored, so a clean build leaves the tree as tagged.
+          # Anything else means the build rewrote a tracked file.
+          if [ -n "$(git status --porcelain)" ]; then
+            git status --porcelain
+            exit 1
+          fi
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm publish

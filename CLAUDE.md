@@ -14,20 +14,17 @@ alternatives), and add it to `docs/README.md`'s index. Do not edit an
 existing ADR's Decision after it ships; add a new one that supersedes it
 instead.
 
-Before treating a change as done, run `npm run typecheck`, then the tests
-under a process limit, as shown below.
+Before treating a change as done, run `npm run typecheck && npm test`.
 
 `npm run build` also needs to succeed before a release, but is not required
-for every local change.
+for every local change. See `docs/releasing.md` for a release.
 
 The tests start detached processes that no test runner timeout can reach.
 A bug that makes them start each other runs until the machine has no
-processes left; this happened once. Run the tests under a process limit,
-set a little above your current process count:
-
-```sh
-(ulimit -u $(( $(ps -U "$(id -u)" | wc -l) + 200 )); npm test)
-```
+processes left; this happened once. `npm test` runs `scripts/test.sh`,
+which sets a process limit a little above your current process count.
+Never run `node --test` directly; pass a file to `npm test -- <file>`
+instead.
 
 Run mutation testing one file at a time with `npm run mutation -- --mutate
 src/<file>.ts --concurrency 2`. `scripts/mutation.sh` sets the process

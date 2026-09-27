@@ -1,0 +1,23 @@
+# Changelog
+
+## (unreleased)
+
+- `npm test` runs the suite under a process limit, through `scripts/test.sh`.
+- Publishing moves to GitHub Actions with an npm Trusted Publisher. See
+  `docs/releasing.md`.
+
+## 0.1.0 (2026-09-27)
+
+First release.
+
+- `autospawn connect`, `serve`, and `stop`: attach to a resident over a
+  Unix domain socket, or start one through a command you choose, such as
+  `op run`. The resident starts your program as a fresh child for each
+  connection, with the environment it got at its one start.
+- A double fork keeps the resident alive when a client kills its process
+  tree.
+- A spawn lock keeps clients that start together from starting two
+  residents.
+- A fingerprint of the configured command catches two configs that share
+  a name but disagree.
+- Known gaps are listed in `docs/limitations.md`.

@@ -15,8 +15,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && chmod +x dist/cli.js",
     "typecheck": "tsc --noEmit",
-    "test": "node --test",
-    "mutation": "sh scripts/mutation.sh"
+    "test": "sh scripts/test.sh",
+    "mutation": "sh scripts/mutation.sh",
+    "prepublishOnly": "npm run typecheck && npm test"
   },
   "license": "MIT",
   "author": "meganemura",
