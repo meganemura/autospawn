@@ -1,6 +1,6 @@
 # autospawn
 
-[日本語](README.ja.md)
+[![npm version](https://img.shields.io/npm/v/autospawn?logo=npm)](https://www.npmjs.com/package/autospawn)
 
 Attach-or-spawn launcher for programs that talk over stdin and stdout.
 A client starts `autospawn connect`. If a resident is already running,
@@ -213,3 +213,11 @@ your own processes.
 
 See [docs/](docs/README.md) for the architecture, the design decisions,
 and the known limitations.
+
+## License
+
+MIT
+
+---
+
+[Japanese](README.ja.md)
