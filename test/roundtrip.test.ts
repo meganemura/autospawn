@@ -3,14 +3,20 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
+import * as hegel from "@hegeldev/hegel";
+import * as gs from "@hegeldev/hegel/generators";
+import { fingerprintArgv } from "../src/protocol.ts";
 import {
   baseEnv,
   cliPath,
   fixturesDir,
+  isDead,
   makeStateDir,
   removeStateDir,
   runCli,
+  runCliBinary,
   sleep,
+  startServeDirect,
   waitFor,
 } from "./helpers.ts";
 
@@ -23,6 +29,11 @@ function chainArgs(server = "echo-server"): string[] {
     process.execPath,
     cliPath,
     "serve",
+    // A killed test (a mutation-testing timeout, for example) skips this
+    // file's t.after() cleanup; --idle-timeout bounds how long any
+    // resident it started outlives it.
+    "--idle-timeout",
+    "10",
     "--",
     path.join(fixturesDir, server),
   ];
@@ -139,5 +150,37 @@ test("two concurrent connects converge on one resident, both round-trip", async 
     fs.readFileSync(countFile, "utf8").length,
     1,
     "the wrapper must run exactly once even when two connects race",
+  );
+});
+
+test("relay: arbitrary binary survives connect -> serve -> echo unchanged", async (t) => {
+  const dir = makeStateDir();
+  const env = baseEnv(dir);
+  const sockPath = path.join(dir, "relayprop.sock");
+  const relayChain = chainArgs();
+  // One resident, shared across every draw below: each Hegel test case
+  // only pays for a fresh `connect` subprocess, not a fresh spawn chain.
+  const resident = startServeDirect(sockPath, fingerprintArgv(relayChain), "echo-server", 30);
+  await waitFor(() => fs.existsSync(sockPath), { timeoutMs: 5000 });
+  t.after(() => {
+    if (!isDead(resident.pid!)) resident.kill("SIGTERM");
+    removeStateDir(dir);
+  });
+
+  await hegel.testAsync(
+    async (tc) => {
+      // Full byte range (0x00 through 0xff), so this covers NUL, "\n",
+      // and byte sequences that are not valid UTF-8 -- connect and serve
+      // relay bytes without ever decoding them as text, and this is the
+      // property that would catch it if one of them started to.
+      const payload = Buffer.from(tc.draw(gs.binary({ minSize: 0, maxSize: 500 })));
+      const result = await runCliBinary(["connect", "--name", "relayprop", "--", ...relayChain], {
+        env,
+        input: payload,
+      });
+      assert.equal(result.code, 0, result.stderr);
+      assert.equal(Buffer.compare(result.stdout, payload), 0);
+    },
+    { testCases: 20 },
   );
 });

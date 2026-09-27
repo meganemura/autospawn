@@ -9,6 +9,7 @@
 // spawn-chain.ts.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { parseFlags, parsePositiveInt, splitOnDoubleDash, type ParseResult } from "./args.ts";
 import { connect } from "./connect.ts";
 import { validateName } from "./paths.ts";
 import { serve } from "./serve.ts";
@@ -32,38 +33,12 @@ function usageError(message: string): never {
   process.exit(2);
 }
 
-function splitOnDoubleDash(args: string[]): { before: string[]; after: string[] } {
-  const idx = args.indexOf("--");
-  if (idx === -1) usageError("missing '--' separating options from the command to run");
-  const before = args.slice(0, idx);
-  const after = args.slice(idx + 1);
-  if (after.length === 0) usageError("nothing follows '--'");
-  return { before, after };
-}
-
-function parseFlags(
-  args: string[],
-  spec: Record<string, "string">,
-): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (let i = 0; i < args.length; i += 1) {
-    const arg = args[i]!;
-    const kind = spec[arg];
-    if (!kind) usageError(`unrecognized option '${arg}'`);
-    const value = args[i + 1];
-    if (value === undefined) usageError(`option '${arg}' needs a value`);
-    out[arg] = value;
-    i += 1;
-  }
-  return out;
-}
-
-function parsePositiveInt(value: string, label: string): number {
-  const n = Number.parseInt(value, 10);
-  if (!Number.isFinite(n) || n <= 0 || String(n) !== value) {
-    usageError(`${label} must be a positive integer, got '${value}'`);
-  }
-  return n;
+// Unwraps a ParseResult from args.ts, translating a parse failure into
+// this process's own exit(2)-with-usage convention. args.ts stays free of
+// that decision so its grammar can be tested without a process to exit.
+function orUsageError<T>(result: ParseResult<T>): T {
+  if (!result.ok) usageError(result.error);
+  return result.value;
 }
 
 function readVersion(): string {
@@ -85,28 +60,32 @@ async function main(argv: string[]): Promise<void> {
   const [command, ...rest] = argv;
 
   if (command === "connect") {
-    const { before, after } = splitOnDoubleDash(rest);
-    const flags = parseFlags(before, { "--name": "string", "--timeout": "string" });
+    const { before, after } = orUsageError(splitOnDoubleDash(rest));
+    const flags = orUsageError(
+      parseFlags(before, { "--name": "string", "--timeout": "string" }),
+    );
     const name = flags["--name"];
     if (!name) usageError("connect requires --name <name>");
     validateName(name);
-    const timeout = flags["--timeout"] ? parsePositiveInt(flags["--timeout"], "--timeout") : undefined;
+    const timeout = flags["--timeout"]
+      ? orUsageError(parsePositiveInt(flags["--timeout"], "--timeout"))
+      : undefined;
     await connect(name, timeout, after);
     return;
   }
 
   if (command === "serve") {
-    const { before, after } = splitOnDoubleDash(rest);
-    const flags = parseFlags(before, { "--idle-timeout": "string" });
+    const { before, after } = orUsageError(splitOnDoubleDash(rest));
+    const flags = orUsageError(parseFlags(before, { "--idle-timeout": "string" }));
     const idleTimeout = flags["--idle-timeout"]
-      ? parsePositiveInt(flags["--idle-timeout"], "--idle-timeout")
+      ? orUsageError(parsePositiveInt(flags["--idle-timeout"], "--idle-timeout"))
       : null;
     await serve(idleTimeout, after);
     return;
   }
 
   if (command === "stop") {
-    const flags = parseFlags(rest, { "--name": "string" });
+    const flags = orUsageError(parseFlags(rest, { "--name": "string" }));
     const name = flags["--name"];
     if (!name) usageError("stop requires --name <name>");
     validateName(name);
@@ -117,7 +96,7 @@ async function main(argv: string[]): Promise<void> {
   if (command === "__spawn") {
     const [logPath, ...spawnRest] = rest;
     if (!logPath) usageError("__spawn requires a log path");
-    const { after } = splitOnDoubleDash(spawnRest);
+    const { after } = orUsageError(splitOnDoubleDash(spawnRest));
     runSpawnChain(logPath, after);
     return;
   }

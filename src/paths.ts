@@ -24,7 +24,8 @@ export class PathError extends Error {}
 
 export function baseDir(env: NodeJS.ProcessEnv = process.env): string {
   const override = env.MCP_AUTOSPAWN_DIR;
-  if (override && override.length > 0) return override;
+  // An empty MCP_AUTOSPAWN_DIR counts as unset, the same as a missing one.
+  if (override) return override;
   const home = env.HOME ?? os.homedir();
   return path.join(home, ".local", "state", "mcp-autospawn");
 }
@@ -38,6 +39,9 @@ export function validateName(name: string): void {
 }
 
 function checkPathLength(p: string, label: string): void {
+  // Stryker disable next-line StringLiteral: Buffer.byteLength falls back
+  // to utf8 for any unrecognized encoding name, the same as Buffer.from
+  // (measured), so emptying this string has no observable effect.
   if (Buffer.byteLength(p, "utf8") > MAX_SOCKET_PATH_BYTES) {
     throw new PathError(
       `${label} path is too long for a unix socket (${p}). ` +
@@ -75,16 +79,27 @@ export function ensureBaseDir(dir: string): void {
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
       fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+      // Stryker disable next-line CallExpression: mkdirSync's own mode
+      // above already determines the result exactly for 0o700, since a
+      // umask can only clear bits and 0o700 has none set outside the
+      // owner -- this chmodSync is a hardening measure against a
+      // pathological umask (one that also clears owner bits), not
+      // reachable behavior a normal-umask test environment can exercise.
       fs.chmodSync(dir, 0o700);
       return;
     }
     throw err;
   }
+  // Stryker disable all: exercising any mutant of this whole check (the
+  // condition, or what its body does) needs a directory owned by a
+  // different real uid than the test process's own, which needs a
+  // second real user account -- not available in this sandbox.
   if (stat.uid !== process.getuid!()) {
     throw new PathError(
       `${dir} is not owned by the current user; refusing to use it`,
     );
   }
+  // Stryker restore all
   if ((stat.mode & 0o077) !== 0) {
     throw new PathError(
       `${dir} is accessible to group or other (mode ${(stat.mode & 0o777).toString(8)}); ` +

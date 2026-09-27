@@ -18,6 +18,8 @@ function chainArgs(server = "echo-server"): string[] {
     process.execPath,
     cliPath,
     "serve",
+    "--idle-timeout",
+    "10",
     "--",
     path.join(fixturesDir, server),
   ];
@@ -116,4 +118,12 @@ test("an open-permission base directory makes connect refuse to run", async (t) 
   });
   assert.equal(result.code, 1);
   assert.match(result.stderr, /mode|accessible/);
+  // Exact line, not just a substring: this is the top-level catch in
+  // cli.ts, whose `(err as Error).message ?? err` reduces a real Error to
+  // its own message with no "Error: " prefix. `?? err` mutated to
+  // `&& err` would instead interpolate the whole Error object (whose
+  // template-literal stringification prepends "Error: "), which a
+  // substring match alone cannot tell apart from the correct form.
+  const [firstLine] = result.stderr.split("\n");
+  assert.equal(firstLine, `mcp-autospawn: ${dir} is accessible to group or other (mode 755); run 'chmod 700 ${dir}' before retrying`);
 });

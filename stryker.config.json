@@ -1,0 +1,29 @@
+{
+  "testRunner_comment": "tap-runner 10.0.0 always returns mutantCoverage from its dry run (with static: {}), regardless of the coverageAnalysis setting. Stryker core treats any mutantCoverage as coverage analysis being on, so every mutant that no test touches in-process (which is most of this project: connect/serve/stop run only as spawned subprocesses) is reported NoCoverage and never even run. The command runner has no such shortcut: it reruns the whole suite per mutant and relies on the instrumented preamble reading process.env.__STRYKER_ACTIVE_MUTANT__, which a spawned subprocess inherits, so subprocess-only code is actually exercised.",
+  "testRunner": "command",
+  "commandRunner": {
+    "command": "node --test"
+  },
+  "coverageAnalysis": "off",
+  "timeoutMS_comment": "The default (5000ms plus 1.5x the dry run time) made every mutant of connect.ts time out, with 0 killed. With coverageAnalysis off, every mutant reruns the whole suite, and each test starts several real subprocesses, so contention alone pushed an unmutated run past the default. With 60000, the same file gave 87 killed, 29 timeout, and 67 survived. A time limit that is too short turns slow runs into false detections, so this raises it for the whole project.",
+  "timeoutMS": 60000,
+  "mutate": [
+    "src/**/*.ts"
+  ],
+  "disableTypeChecks": "src/**/*.ts",
+  "reporters": [
+    "clear-text",
+    "html",
+    "agent"
+  ],
+  "plugins": [
+    "@stryker-mutator/*",
+    "stryker-agent-reporter"
+  ],
+  "ignorePatterns": [
+    "dist",
+    "docs"
+  ],
+  "tsconfigFile_comment": "TypeScript 7 has no JS API for tsconfig rewriting (stryker-js #6111). tsconfig.json has no extends or references, so the rewrite Stryker's core would do has nothing to change; pointing tsconfigFile at a nonexistent file makes it skip the rewrite instead of crashing.",
+  "tsconfigFile": "stryker-skip-tsconfig-rewrite.json"
+}

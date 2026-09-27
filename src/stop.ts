@@ -23,6 +23,11 @@ export async function stop(name: string): Promise<never> {
 
   if (!connected) {
     try {
+      // Stryker disable next-line ConditionalExpression: the surrounding
+      // catch below swallows any error unlinkSync throws, including
+      // ENOENT when there was never a file to remove -- calling it
+      // unconditionally reaches the exact same outcome (still "not
+      // running", still exit 0) as gating it on the error code.
       if (connectErrorCode === "ECONNREFUSED") fs.unlinkSync(sockPath);
     } catch {
       // already gone
@@ -35,6 +40,11 @@ export async function stop(name: string): Promise<never> {
     sock.write(encodeLine({ v: 1, op: "stop" }), (err) => (err ? reject(err) : resolve()));
   });
   const reply = (await readHeaderLine(sock)) as ServerReply;
+  // Stryker disable next-line CallExpression: both branches below call
+  // process.exit() unconditionally right after this, which tears down
+  // every open handle (this socket included) at the OS level regardless
+  // of whether it was explicitly destroyed first -- no observable
+  // difference from outside this process.
   sock.destroy();
   if (reply.ok) {
     process.stderr.write("mcp-autospawn stop: stopped\n");

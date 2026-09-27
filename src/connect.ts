@@ -6,7 +6,7 @@
 // anything else); parsing MCP traffic; writing anything but the relay to
 // stdout (diagnostics go to stderr only, since stdout is the JSON-RPC
 // channel a client reads).
-import { spawn } from "node:child_process";
+import childProcess from "node:child_process";
 import fs from "node:fs";
 import net, { type Socket } from "node:net";
 import path from "node:path";
@@ -39,11 +39,15 @@ const CLI_PATH = fileURLToPath(
 // a recursion, and startChain refuses it.
 const CHAIN_MARKER = "MCP_AUTOSPAWN_IN_CHAIN";
 
-function sleep(ms: number): Promise<void> {
+// Exported for direct, in-process testing of this module's own decision
+// logic (lock lifecycle, chain startup, the attach handshake's error
+// paths). Other tests reach connect() only as a subprocess, and Stryker
+// cannot see coverage inside a subprocess. No behavior changes from this.
+export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function tryConnect(sockPath: string): Promise<Socket | null> {
+export function tryConnect(sockPath: string): Promise<Socket | null> {
   return new Promise((resolve) => {
     const sock = net.connect(sockPath);
     const onError = () => {
@@ -58,7 +62,7 @@ function tryConnect(sockPath: string): Promise<Socket | null> {
   });
 }
 
-function pidAlive(pid: number): boolean {
+export function pidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
@@ -67,7 +71,7 @@ function pidAlive(pid: number): boolean {
   }
 }
 
-function fail(message: string, log: string): never {
+export function fail(message: string, log: string): never {
   process.stderr.write(`mcp-autospawn connect: ${message} (log: ${log})\n`);
   process.exit(1);
 }
@@ -82,9 +86,9 @@ function fail(message: string, log: string): never {
 // happens inside serve, after whatever approval the spawn command triggers.
 // By the time a bind exists to race on, the second approval prompt (if any)
 // has already been shown.
-type LockRole = "holder" | "waiter";
+export type LockRole = "holder" | "waiter";
 
-function acquireOrWaitForLock(lockPath: string, staleAfterMs: number): LockRole {
+export function acquireOrWaitForLock(lockPath: string, staleAfterMs: number): LockRole {
   if (tryCreateLock(lockPath)) return "holder";
 
   let ageMs = Infinity;
@@ -107,7 +111,7 @@ function acquireOrWaitForLock(lockPath: string, staleAfterMs: number): LockRole 
   return tryCreateLock(lockPath) ? "holder" : "waiter";
 }
 
-function tryCreateLock(lockPath: string): boolean {
+export function tryCreateLock(lockPath: string): boolean {
   try {
     fs.writeFileSync(lockPath, `${process.pid}\n`, { flag: "wx", mode: 0o600 });
     fs.chmodSync(lockPath, 0o600);
@@ -118,7 +122,7 @@ function tryCreateLock(lockPath: string): boolean {
   }
 }
 
-function releaseLock(lockPath: string): void {
+export function releaseLock(lockPath: string): void {
   try {
     fs.unlinkSync(lockPath);
   } catch {
@@ -131,7 +135,7 @@ function releaseLock(lockPath: string): void {
 // returns the pid. Env carries the fingerprint and socket path through to
 // spawnCommand, since op run (and similar wrappers) pass environment
 // through by default.
-async function startChain(
+export async function startChain(
   sockPath: string,
   log: string,
   fingerprint: string,
@@ -142,7 +146,7 @@ async function startChain(
   }
   // No process.execArgv: under a test runner it holds the runner's own
   // flags, and neither .ts (type stripping) nor dist .js needs a flag.
-  const child = spawn(
+  const child = childProcess.spawn(
     process.execPath,
     [CLI_PATH, "__spawn", log, "--", ...spawnCommand],
     {
@@ -179,7 +183,7 @@ async function startChain(
   return pid;
 }
 
-async function attachAndRelay(sock: Socket, fingerprint: string): Promise<never> {
+export async function attachAndRelay(sock: Socket, fingerprint: string): Promise<never> {
   await new Promise<void>((resolve, reject) => {
     sock.write(encodeLine({ v: 1, op: "attach", fingerprint }), (err) =>
       err ? reject(err) : resolve(),

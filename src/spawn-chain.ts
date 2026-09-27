@@ -14,7 +14,7 @@
 // Not done here: waiting for the spawned command to exit, or reporting its
 // exit code (connect can no longer observe it once this process exits; it
 // infers failure from pid liveness plus a connection attempt instead).
-import { spawn } from "node:child_process";
+import childProcess from "node:child_process";
 import fs from "node:fs";
 
 export function runSpawnChain(logPath: string, command: readonly string[]): void {
@@ -27,7 +27,7 @@ export function runSpawnChain(logPath: string, command: readonly string[]): void
   const logFd = fs.openSync(logPath, "a", 0o600);
   let child;
   try {
-    child = spawn(cmd, args, {
+    child = childProcess.spawn(cmd, args, {
       detached: true,
       stdio: ["ignore", logFd, logFd],
     });

@@ -15,7 +15,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && chmod +x dist/cli.js",
     "typecheck": "tsc --noEmit",
-    "test": "node --test"
+    "test": "node --test",
+    "mutation": "sh scripts/mutation.sh"
   },
   "license": "MIT",
   "author": "meganemura",
@@ -27,9 +28,11 @@
     "url": "https://github.com/meganemura/mcp-autospawn/issues"
   },
   "homepage": "https://github.com/meganemura/mcp-autospawn#readme",
-  "dependencies": {},
   "devDependencies": {
-    "typescript": "7.0.2",
-    "@types/node": "24.13.6"
+    "@hegeldev/hegel": "0.4.6",
+    "@stryker-mutator/core": "10.0.0",
+    "@types/node": "24.13.6",
+    "stryker-agent-reporter": "0.1.0",
+    "typescript": "7.0.2"
   }
 }

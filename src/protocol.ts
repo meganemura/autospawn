@@ -31,6 +31,11 @@ export function fingerprintArgv(argv: readonly string[]): string {
 }
 
 export function encodeLine(obj: unknown): Buffer {
+  // Stryker disable next-line StringLiteral: Buffer.from falls back to
+  // utf8 for any unrecognized encoding name (measured: Buffer.from(s, "")
+  // produces byte-for-byte the same output as Buffer.from(s, "utf8"), for
+  // ASCII and multi-byte content alike), so a mutant that empties this
+  // string has no observable effect.
   return Buffer.from(JSON.stringify(obj) + "\n", "utf8");
 }
 
@@ -62,18 +67,31 @@ export function readHeaderLine(
     let done = false;
 
     const cleanup = () => {
+      // Stryker disable next-line CallExpression: dropping this leaves
+      // the timer running for up to timeoutMs after resolution, but its
+      // callback finds done already true and calls finish(), whose own
+      // "if (done) return" makes that a no-op -- no observable effect,
+      // just an OS timer held open a little longer than necessary.
       clearTimeout(timer);
       socket.removeListener("data", onData);
       socket.removeListener("error", onError);
       socket.removeListener("close", onClose);
     };
 
-    const finish = (err: Error | null, value?: unknown) => {
+    // Only failures settle through here. The success path in onData
+    // resolves directly, because it must pause and unshift in between.
+    const finish = (err: Error) => {
+      // Stryker disable next-line ConditionalExpression: the only way
+      // finish() runs twice is two of {timeout, onError, onClose} firing
+      // for the same socket; a second reject()/resolve() on an
+      // already-settled promise is a no-op per the Promise spec, so
+      // skipping this guard has no observable effect.
       if (done) return;
+      // Stryker disable next-line BooleanLiteral: same reasoning as
+      // above -- nothing besides this guard reads `done` again.
       done = true;
       cleanup();
-      if (err) reject(err);
-      else resolve(value);
+      reject(err);
     };
 
     const timer = setTimeout(() => {
@@ -97,10 +115,26 @@ export function readHeaderLine(
         finish(new HeaderError("header_invalid", "header line is not valid JSON"));
         return;
       }
+      // Stryker disable next-line ConditionalExpression: cleanup() below
+      // has already removed this handler by the time any second call
+      // could happen; the only way "done" could already be true here is
+      // finish() having settled the promise first (a timeout or error
+      // racing this success), and resolve()/reject() on an
+      // already-settled promise is a no-op per the Promise spec, so
+      // skipping this guard has no observable effect.
       if (done) return;
+      // Stryker disable next-line BooleanLiteral: nothing downstream
+      // reads `done` again on this path once cleanup() below has run
+      // (the only other reader, finish(), can no longer be invoked for
+      // this socket), so leaving it false here has no observable effect.
       done = true;
       cleanup();
       socket.pause();
+      // Stryker disable next-line all: measured that Readable.unshift()
+      // with an empty buffer emits no "data" event (Node treats a
+      // zero-length push as a no-op), so calling it unconditionally
+      // (ConditionalExpression) or on ">= 0" (EqualityOperator, always
+      // true for a length) is equivalent to this guard.
       if (rest.length > 0) socket.unshift(rest);
       resolve(parsed);
     };

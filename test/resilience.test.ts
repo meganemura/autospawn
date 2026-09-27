@@ -24,6 +24,8 @@ function chainArgs(): string[] {
     process.execPath,
     cliPath,
     "serve",
+    "--idle-timeout",
+    "10",
     "--",
     path.join(fixturesDir, "echo-server"),
   ];

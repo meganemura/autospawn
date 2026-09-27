@@ -1,10 +1,18 @@
+import { spawn } from "node:child_process";
 import fs from "node:fs";
+import net from "node:net";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
+import { encodeLine, readHeaderLine } from "../src/protocol.ts";
 import { baseEnv, cliPath, fixturesDir, makeStateDir, removeStateDir, runCli, waitFor } from "./helpers.ts";
 
-function chainArgs(server = "echo-server", serveArgs: string[] = []): string[] {
+// A default --idle-timeout, so a resident this file's own `stop` calls
+// don't reach (a test killed mid-run under mutation testing, for example)
+// exits on its own instead of running forever.
+const DEFAULT_SERVE_ARGS = ["--idle-timeout", "10"];
+
+function chainArgs(server = "echo-server", serveArgs: string[] = DEFAULT_SERVE_ARGS): string[] {
   return [
     path.join(fixturesDir, "fake-wrapper"),
     process.execPath,
@@ -56,4 +64,64 @@ test("--idle-timeout ends the resident once connections drop to zero", async (t)
   assert.equal(fs.existsSync(sockPath), true, "resident should still be up right after connect exits");
 
   await waitFor(() => !fs.existsSync(sockPath), { timeoutMs: 5000 });
+});
+
+test("stop: an error reply from the resident is printed and exits 1", async (t) => {
+  // A fake resident (not the real serve.ts) that replies with an error to
+  // any "stop" request, so this exercises stop.ts's own error-reply
+  // branch without depending on serve.ts ever actually taking it (it
+  // currently never does: serve always answers a stop with {ok:true}).
+  const dir = makeStateDir();
+  const env = baseEnv(dir);
+  const sockPath = path.join(dir, "erroring.sock");
+  const server = net.createServer((socket) => {
+    readHeaderLine(socket)
+      .then(() => {
+        socket.write(
+          encodeLine({ ok: false, error: "test_error", message: "custom stop failure" }),
+        );
+      })
+      .catch(() => socket.destroy());
+  });
+  await new Promise<void>((resolve) => server.listen(sockPath, resolve));
+  t.after(() => {
+    server.close();
+    removeStateDir(dir);
+  });
+
+  const result = await runCli(["stop", "--name", "erroring"], { env });
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /custom stop failure/);
+});
+
+test("stop: a residual socket file with nobody listening is removed, and reported as not running", async (t) => {
+  const dir = makeStateDir();
+  const env = baseEnv(dir);
+  const sockPath = path.join(dir, "residual.sock");
+  t.after(() => removeStateDir(dir));
+
+  // Same construction as failures.test.ts's "stale socket" test: a real
+  // listener, SIGKILLed, so the socket file survives with nothing behind
+  // it (an orphan from a crashed resident) -- stop connecting to it gets
+  // ECONNREFUSED, not ENOENT.
+  const orphan = spawn(
+    process.execPath,
+    ["-e", `require("node:net").createServer().listen(process.argv[1])`, sockPath],
+    { stdio: "ignore" },
+  );
+  await new Promise<void>((resolve) => {
+    const check = setInterval(() => {
+      if (fs.existsSync(sockPath)) {
+        clearInterval(check);
+        resolve();
+      }
+    }, 20);
+  });
+  orphan.kill("SIGKILL");
+  await new Promise<void>((resolve) => orphan.once("exit", () => resolve()));
+
+  const result = await runCli(["stop", "--name", "residual"], { env });
+  assert.equal(result.code, 0);
+  assert.match(result.stderr, /not running/);
+  assert.equal(fs.existsSync(sockPath), false, "the residual socket file must be removed");
 });

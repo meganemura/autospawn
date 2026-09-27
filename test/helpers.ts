@@ -14,8 +14,18 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 export const cliPath = path.join(here, "..", "src", "cli.ts");
 export const fixturesDir = path.join(here, "fixtures");
 
+// Hardcoded /tmp (not os.tmpdir()) by default, for the socket path length
+// reason above; MCP_AUTOSPAWN_TEST_TMP overrides the parent directory so a
+// mutation run (or anything else that wants its own leftovers contained)
+// can point every test's state dir somewhere it fully controls and can
+// remove in one step, instead of everything landing in shared /tmp.
+export function testTmpParent(): string {
+  const override = process.env.MCP_AUTOSPAWN_TEST_TMP;
+  return override && override.length > 0 ? override : "/tmp";
+}
+
 export function makeStateDir(): string {
-  return mkdtempSync(path.join("/tmp", "mas-"));
+  return mkdtempSync(path.join(testTmpParent(), "mas-"));
 }
 
 export function removeStateDir(dir: string): void {
@@ -48,6 +58,32 @@ export function runCli(
   });
 }
 
+export type RawRunResult = { code: number | null; stdout: Buffer; stderr: string };
+
+// Like runCli, but keeps stdout as a Buffer instead of decoding it as
+// UTF-8: for a relay test carrying arbitrary bytes (0x00, invalid UTF-8),
+// decoding and re-encoding would corrupt the very bytes the test is
+// checking arrive unchanged.
+export function runCliBinary(
+  args: string[],
+  opts: { env?: NodeJS.ProcessEnv; input: Buffer },
+): Promise<RawRunResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cliPath, ...args], {
+      env: opts.env ?? process.env,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const stdoutChunks: Buffer[] = [];
+    let stderr = "";
+    child.stdout.on("data", (c: Buffer) => stdoutChunks.push(c));
+    child.stderr.on("data", (c: Buffer) => (stderr += c.toString("utf8")));
+    child.on("error", reject);
+    child.on("close", (code) => resolve({ code, stdout: Buffer.concat(stdoutChunks), stderr }));
+    child.stdin.write(opts.input);
+    child.stdin.end();
+  });
+}
+
 // Starts a connect subprocess without waiting for it to finish, for tests
 // that need to interact with it while it runs (write to stdin, read partial
 // stdout, kill it mid-flight).
@@ -67,15 +103,27 @@ export function startServeDirect(
   sockPath: string,
   fingerprint: string,
   server = "echo-server",
+  idleTimeoutSeconds = 10,
 ): ChildProcess {
-  return spawn(process.execPath, [cliPath, "serve", "--", path.join(fixturesDir, server)], {
-    env: {
-      ...process.env,
-      MCP_AUTOSPAWN_SOCKET: sockPath,
-      MCP_AUTOSPAWN_FINGERPRINT: fingerprint,
+  return spawn(
+    process.execPath,
+    [
+      cliPath,
+      "serve",
+      "--idle-timeout",
+      String(idleTimeoutSeconds),
+      "--",
+      path.join(fixturesDir, server),
+    ],
+    {
+      env: {
+        ...process.env,
+        MCP_AUTOSPAWN_SOCKET: sockPath,
+        MCP_AUTOSPAWN_FINGERPRINT: fingerprint,
+      },
+      stdio: ["ignore", "ignore", "ignore"],
     },
-    stdio: ["ignore", "ignore", "ignore"],
-  });
+  );
 }
 
 export function isDead(pid: number): boolean {
