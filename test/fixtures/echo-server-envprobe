@@ -1,5 +1,7 @@
 #!/bin/sh
-# Prints the env var fake-wrapper adds as its first line of output, then
+# Prints the env var fake-wrapper adds as its first line of output, and the
+# names of any AUTOSPAWN_ variables it can see as its second line, then
 # relays stdin to stdout byte for byte like echo-server.
 printf 'env:%s\n' "${FAKE_WRAPPER_SECRET:-missing}"
+printf 'autospawn-vars:%s\n' "$(env | grep '^AUTOSPAWN_' | cut -d= -f1 | sort | tr '\n' ',')"
 exec cat

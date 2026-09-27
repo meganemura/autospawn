@@ -72,7 +72,12 @@ test("two connects share one resident (wrapper runs once)", async (t) => {
   assert.equal(fs.readFileSync(countFile, "utf8").length, 1, "wrapper should run exactly once");
 });
 
-test("wrapper's env reaches the server child", async (t) => {
+// The empty autospawn-vars line guards the chain marker. connect puts
+// AUTOSPAWN_IN_CHAIN, AUTOSPAWN_SOCKET, and AUTOSPAWN_FINGERPRINT into the
+// chain's environment, and serve must strip them before it starts the
+// server. If the marker reached the server, a server that itself runs
+// `autospawn connect` for another name would be refused as a recursion.
+test("wrapper's env reaches the server child, and autospawn's own variables do not", async (t) => {
   const dir = makeStateDir();
   const countFile = path.join(dir, "count");
   const env = baseEnv(dir);
@@ -89,7 +94,7 @@ test("wrapper's env reaches the server child", async (t) => {
     "echo-server-envprobe",
   );
   assert.equal(result.code, 0, result.stderr);
-  assert.equal(result.stdout, "env:shh\nping\n");
+  assert.equal(result.stdout, "env:shh\nautospawn-vars:\nping\n");
 });
 
 test("stdin to stdout round trip, byte-exact, header trailing bytes preserved", async (t) => {
