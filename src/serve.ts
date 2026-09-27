@@ -55,9 +55,11 @@ function sameOwnership(a: Ownership, b: Ownership | null): boolean {
   return sameDevice && a.ino === b.ino;
 }
 
-function requireSocket(): never {
+// connect always sets both variables. A serve without one of them was not
+// started by connect, so it has no socket to own or no command to match.
+function requireEnv(name: string): never {
   process.stderr.write(
-    "autospawn serve: AUTOSPAWN_SOCKET is not set; serve must be " +
+    `autospawn serve: ${name} is not set; serve must be ` +
       "started by 'autospawn connect', not run directly\n",
   );
   process.exit(2);
@@ -67,32 +69,30 @@ export async function serve(
   idleTimeoutSeconds: number | null,
   serverCommand: readonly string[],
 ): Promise<never> {
-  const sockPath: string = process.env.AUTOSPAWN_SOCKET ?? requireSocket();
-  const fingerprint = process.env.AUTOSPAWN_FINGERPRINT ?? "";
+  const sockPath: string = process.env.AUTOSPAWN_SOCKET ?? requireEnv("AUTOSPAWN_SOCKET");
+  const fingerprint: string =
+    process.env.AUTOSPAWN_FINGERPRINT ?? requireEnv("AUTOSPAWN_FINGERPRINT");
   ensureBaseDir(path.dirname(sockPath));
 
   const children = new Set<ChildProcess>();
-  let ownership: Ownership | null = null;
   let raceLost = false;
   let idleTimer: NodeJS.Timeout | null = null;
-  let shuttingDown = false;
 
   const server = net.createServer({ allowHalfOpen: true });
 
+  // Called at startup and when a child closes. Starting a child clears the
+  // timer (spawnChild), so the timer can only fire with no children.
   function scheduleIdleCheck(): void {
     if (idleTimeoutSeconds === null) return;
-    if (idleTimer) clearTimeout(idleTimer);
     if (children.size > 0) return;
     idleTimer = setTimeout(() => {
-      if (children.size === 0) {
-        logLine(`idle for ${idleTimeoutSeconds}s, stopping`);
-        void shutdownOwned();
-      }
+      logLine(`idle for ${idleTimeoutSeconds}s, stopping`);
+      void shutdownOwned();
     }, idleTimeoutSeconds * 1000);
   }
 
-  function checkOwnership(): void {
-    if (raceLost || ownership === null) return;
+  function checkOwnership(ownership: Ownership): void {
+    if (raceLost) return;
     const current = statOwnership(sockPath);
     if (!sameOwnership(ownership, current)) {
       raceLost = true;
@@ -110,23 +110,25 @@ export async function serve(
     process.exit(0);
   }
 
+  // A second call (a signal during a stop, say) closes an already closed
+  // server; its callback gets an error and exits 0 the same way.
   function shutdownOwned(): Promise<never> {
-    if (shuttingDown) return new Promise<never>(() => {});
-    shuttingDown = true;
     for (const child of children) child.kill("SIGTERM");
     return new Promise<never>(() => {
-      server.close(() => {
-        process.exit(0);
-      });
+      // Stryker disable next-line ArrowFunction,CallExpression: close()
+      // removes the socket file, so without this exit the next ownership
+      // check, within a second, finds the path gone and exits 0 the same
+      // way. The explicit exit keeps the shutdown readable in one place.
+      server.close(() => process.exit(0));
     });
   }
 
+  // No ownership check here: once the path points at another resident, no
+  // new connection can reach this server, since clients connect by path.
   server.on("connection", (socket: Socket) => {
-    checkOwnership();
-    if (raceLost || shuttingDown) {
-      socket.destroy();
-      return;
-    }
+    // Stryker disable next-line ArrowFunction: handleConnection settles every
+    // error path itself, so this catch never runs today. It stays so that a
+    // future throw drops one connection instead of crashing the resident.
     handleConnection(socket).catch(() => socket.destroy());
   });
 
@@ -222,9 +224,12 @@ export async function serve(
 
   await bindListener(server, sockPath);
   fs.chmodSync(sockPath, 0o600);
-  ownership = statOwnership(sockPath);
+  const ownership = statOwnership(sockPath);
+  // Stryker disable next-line all: the path exists here, because listen and
+  // chmodSync just succeeded on it. This only narrows the type.
+  if (ownership === null) throw new Error(`socket ${sockPath} vanished right after listen`);
   scheduleIdleCheck();
-  const ownershipTimer = setInterval(checkOwnership, 1000);
+  const ownershipTimer = setInterval(() => checkOwnership(ownership), 1000);
   ownershipTimer.unref?.();
 
   const onSignal = () => {

@@ -6,6 +6,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import fs from "node:fs";
 import { mkdtempSync } from "node:fs";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -99,31 +100,74 @@ export function spawnConnect(args: string[], env: NodeJS.ProcessEnv): ChildProce
 // serve refuses to run without AUTOSPAWN_SOCKET, which is why this
 // takes sockPath and fingerprint as the caller's own responsibility rather
 // than deriving them the way connect would.
+//
+// idleTimeoutSeconds null starts serve with no --idle-timeout; a caller that
+// does so must kill it in its own cleanup. stderrFd, when given, receives
+// serve's own log lines.
 export function startServeDirect(
   sockPath: string,
   fingerprint: string,
   server = "echo-server",
-  idleTimeoutSeconds = 10,
+  idleTimeoutSeconds: number | null = 10,
+  { stderrFd }: { stderrFd?: number } = {},
 ): ChildProcess {
+  const idleArgs = idleTimeoutSeconds === null ? [] : ["--idle-timeout", String(idleTimeoutSeconds)];
   return spawn(
     process.execPath,
-    [
-      cliPath,
-      "serve",
-      "--idle-timeout",
-      String(idleTimeoutSeconds),
-      "--",
-      path.join(fixturesDir, server),
-    ],
+    [cliPath, "serve", ...idleArgs, "--", path.join(fixturesDir, server)],
     {
       env: {
         ...process.env,
         AUTOSPAWN_SOCKET: sockPath,
         AUTOSPAWN_FINGERPRINT: fingerprint,
       },
-      stdio: ["ignore", "ignore", "ignore"],
+      stdio: ["ignore", "ignore", stderrFd ?? "ignore"],
     },
   );
+}
+
+// Connects to a resident's socket without connect, sends an attach header,
+// and resolves once the resident answers ok. The socket then relays to the
+// resident's child until the caller ends it.
+export async function attachRaw(sockPath: string, fingerprint: string): Promise<net.Socket> {
+  const sock = net.connect(sockPath);
+  await new Promise<void>((resolve, reject) => {
+    sock.once("connect", resolve);
+    sock.once("error", reject);
+  });
+  sock.write(JSON.stringify({ v: 1, op: "attach", fingerprint }) + "\n");
+  const reply = await new Promise<string>((resolve, reject) => {
+    let buf = "";
+    const onData = (chunk: Buffer) => {
+      buf += chunk.toString("utf8");
+      const idx = buf.indexOf("\n");
+      if (idx === -1) return;
+      sock.removeListener("data", onData);
+      resolve(buf.slice(0, idx));
+    };
+    sock.on("data", onData);
+    sock.once("error", reject);
+  });
+  if (reply !== '{"ok":true}') throw new Error(`attach refused: ${reply}`);
+  return sock;
+}
+
+// Resolves with how a child process exited, or with "still running" once
+// timeoutMs passes.
+export function exitWithin(
+  child: ChildProcess,
+  timeoutMs: number,
+): Promise<{ code: number | null; signal: NodeJS.Signals | null } | "still running"> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return Promise.resolve({ code: child.exitCode, signal: child.signalCode });
+  }
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve("still running"), timeoutMs);
+    child.once("exit", (code, signal) => {
+      clearTimeout(timer);
+      resolve({ code, signal });
+    });
+  });
 }
 
 export function isDead(pid: number): boolean {
