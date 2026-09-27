@@ -7,6 +7,7 @@
 - [0005. The fingerprint covers argv only, and a mismatch never auto-restarts](adr/0005-fingerprint-argv-only.md)
 - [0006. A spawn lock file, so only one connect starts the chain](adr/0006-spawn-lock.md)
 - [0007. Not limited to MCP, and named autospawn](adr/0007-not-limited-to-mcp.md)
+- [0008. Per-connection values travel as declared environment variables](adr/0008-per-connection-params.md)
 
 See [architecture.md](architecture.md) for how these decisions fit together
 at runtime.
