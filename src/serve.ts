@@ -29,7 +29,7 @@ function logLine(message: string): void {
 function childEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   for (const key of Object.keys(env)) {
-    if (key.startsWith("MCP_AUTOSPAWN_")) delete env[key];
+    if (key.startsWith("AUTOSPAWN_")) delete env[key];
   }
   return env;
 }
@@ -51,8 +51,8 @@ function sameOwnership(a: Ownership, b: Ownership | null): boolean {
 
 function requireSocket(): never {
   process.stderr.write(
-    "mcp-autospawn serve: MCP_AUTOSPAWN_SOCKET is not set; serve must be " +
-      "started by 'mcp-autospawn connect', not run directly\n",
+    "autospawn serve: AUTOSPAWN_SOCKET is not set; serve must be " +
+      "started by 'autospawn connect', not run directly\n",
   );
   process.exit(2);
 }
@@ -61,8 +61,8 @@ export async function serve(
   idleTimeoutSeconds: number | null,
   serverCommand: readonly string[],
 ): Promise<never> {
-  const sockPath: string = process.env.MCP_AUTOSPAWN_SOCKET ?? requireSocket();
-  const fingerprint = process.env.MCP_AUTOSPAWN_FINGERPRINT ?? "";
+  const sockPath: string = process.env.AUTOSPAWN_SOCKET ?? requireSocket();
+  const fingerprint = process.env.AUTOSPAWN_FINGERPRINT ?? "";
   ensureBaseDir(path.dirname(sockPath));
 
   const children = new Set<ChildProcess>();

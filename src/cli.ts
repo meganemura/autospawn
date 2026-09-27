@@ -16,7 +16,7 @@ import { serve } from "./serve.ts";
 import { runSpawnChain } from "./spawn-chain.ts";
 import { stop } from "./stop.ts";
 
-const USAGE = `usage: mcp-autospawn <command> [options]
+const USAGE = `usage: autospawn <command> [options]
 
 commands:
   connect --name <name> [--timeout <seconds>] -- <spawn-command...>
@@ -28,7 +28,7 @@ commands:
 `;
 
 function usageError(message: string): never {
-  process.stderr.write(`mcp-autospawn: ${message}\n`);
+  process.stderr.write(`autospawn: ${message}\n`);
   process.stderr.write(USAGE);
   process.exit(2);
 }
@@ -105,6 +105,6 @@ async function main(argv: string[]): Promise<void> {
 }
 
 main(process.argv.slice(2)).catch((err: unknown) => {
-  process.stderr.write(`mcp-autospawn: ${(err as Error).message ?? err}\n`);
+  process.stderr.write(`autospawn: ${(err as Error).message ?? err}\n`);
   process.exit(1);
 });

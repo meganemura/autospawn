@@ -20,7 +20,7 @@ import fs from "node:fs";
 export function runSpawnChain(logPath: string, command: readonly string[]): void {
   const [cmd, ...args] = command;
   if (!cmd) {
-    process.stderr.write("mcp-autospawn __spawn: empty command\n");
+    process.stderr.write("autospawn __spawn: empty command\n");
     process.exitCode = 2;
     return;
   }

@@ -19,7 +19,7 @@ test("--help / -h: prints usage to stdout and exits 0", async () => {
   for (const flag of ["--help", "-h"]) {
     const result = await runCli([flag]);
     assert.equal(result.code, 0);
-    assert.match(result.stdout, /usage: mcp-autospawn <command>/);
+    assert.match(result.stdout, /usage: autospawn <command>/);
     assert.match(result.stdout, /connect --name/);
     assert.equal(result.stderr, "");
   }
@@ -28,7 +28,7 @@ test("--help / -h: prints usage to stdout and exits 0", async () => {
 test("no arguments: prints usage to stdout and exits 2", async () => {
   const result = await runCli([]);
   assert.equal(result.code, 2);
-  assert.match(result.stdout, /usage: mcp-autospawn <command>/);
+  assert.match(result.stdout, /usage: autospawn <command>/);
 });
 
 test("--version / -v: prints exactly the package.json version and exits 0", async () => {
@@ -43,8 +43,8 @@ test("an unknown command is a usage error: exit 2, message names it, usage follo
   const result = await runCli(["bogus-command"]);
   assert.equal(result.code, 2);
   const [firstLine] = result.stderr.split("\n");
-  assert.equal(firstLine, "mcp-autospawn: unknown command 'bogus-command'");
-  assert.match(result.stderr, /usage: mcp-autospawn <command>/);
+  assert.equal(firstLine, "autospawn: unknown command 'bogus-command'");
+  assert.match(result.stderr, /usage: autospawn <command>/);
 });
 
 test("connect without --name is a usage error", async () => {

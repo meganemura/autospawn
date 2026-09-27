@@ -22,7 +22,7 @@ import {
 
 // The spawn-command every test in this file uses: a fake secrets wrapper
 // (records that it ran, adds an env var) that execs into `serve`, which in
-// turn runs the fake MCP echo server.
+// turn runs the echo server.
 function chainArgs(server = "echo-server"): string[] {
   return [
     path.join(fixturesDir, "fake-wrapper"),
@@ -72,7 +72,7 @@ test("two connects share one resident (wrapper runs once)", async (t) => {
   assert.equal(fs.readFileSync(countFile, "utf8").length, 1, "wrapper should run exactly once");
 });
 
-test("wrapper's env reaches the MCP server child", async (t) => {
+test("wrapper's env reaches the server child", async (t) => {
   const dir = makeStateDir();
   const countFile = path.join(dir, "count");
   const env = baseEnv(dir);

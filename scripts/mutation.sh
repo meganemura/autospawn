@@ -6,7 +6,7 @@
 #    current process count plus a margin, so a runaway fails to fork
 #    instead of filling the machine.
 # 2. A private, short parent directory for the tests' state directories
-#    (MCP_AUTOSPAWN_TEST_TMP). A test that a mutant stops partway never
+#    (AUTOSPAWN_TEST_TMP). A test that a mutant stops partway never
 #    runs its cleanup, and the directory takes what it leaves behind.
 # 3. A final sweep of every process started from Stryker's sandbox. A
 #    mutant in serve can break its own idle timeout or its stop handler,
@@ -21,7 +21,7 @@ dir=$(mktemp -d /tmp/mas-run.XXXXXX) || exit 1
 
 (
   ulimit -u "$limit"
-  MCP_AUTOSPAWN_TEST_TMP="$dir" npx stryker run "$@"
+  AUTOSPAWN_TEST_TMP="$dir" npx stryker run "$@"
 )
 code=$?
 

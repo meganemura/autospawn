@@ -2,7 +2,7 @@
 // base directory that another user could have redirected.
 //
 // Not done here: creating the socket or log file themselves (net/fs callers
-// do that); reading MCP_AUTOSPAWN_SOCKET (connect and serve each read it from
+// do that); reading AUTOSPAWN_SOCKET (connect and serve each read it from
 // their own environment, at the point where they need it).
 //
 // Why HOME and not XDG_RUNTIME_DIR/XDG_STATE_HOME/TMPDIR: some MCP clients
@@ -23,11 +23,11 @@ const MAX_SOCKET_PATH_BYTES = 103;
 export class PathError extends Error {}
 
 export function baseDir(env: NodeJS.ProcessEnv = process.env): string {
-  const override = env.MCP_AUTOSPAWN_DIR;
-  // An empty MCP_AUTOSPAWN_DIR counts as unset, the same as a missing one.
+  const override = env.AUTOSPAWN_DIR;
+  // An empty AUTOSPAWN_DIR counts as unset, the same as a missing one.
   if (override) return override;
   const home = env.HOME ?? os.homedir();
-  return path.join(home, ".local", "state", "mcp-autospawn");
+  return path.join(home, ".local", "state", "autospawn");
 }
 
 export function validateName(name: string): void {
@@ -45,7 +45,7 @@ function checkPathLength(p: string, label: string): void {
   if (Buffer.byteLength(p, "utf8") > MAX_SOCKET_PATH_BYTES) {
     throw new PathError(
       `${label} path is too long for a unix socket (${p}). ` +
-        "Set MCP_AUTOSPAWN_DIR to a shorter directory.",
+        "Set AUTOSPAWN_DIR to a shorter directory.",
     );
   }
 }
@@ -69,9 +69,9 @@ export function spawnLockPath(dir: string, name: string): string {
 // Ensures the base directory exists with mode 0700, owned by the current
 // user. If it already exists but is group- or world-accessible, or owned by
 // someone else, refuses: a client never sends secrets over this socket, but
-// it does send its MCP traffic. Someone who can redirect this directory (or
+// it does send its traffic. Someone who can redirect this directory (or
 // pre-create it) could get a client to connect to a socket they control and
-// answer as the MCP server in the resident's place.
+// answer as the server in the resident's place.
 export function ensureBaseDir(dir: string): void {
   let stat: fs.Stats;
   try {

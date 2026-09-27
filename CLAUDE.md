@@ -1,4 +1,4 @@
-# mcp-autospawn
+# autospawn
 
 This repository is public-facing: commit messages, code comments, and docs
 are English. The one entry point for users is `README.md`. Anything past

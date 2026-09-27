@@ -125,5 +125,5 @@ test("an open-permission base directory makes connect refuse to run", async (t) 
   // template-literal stringification prepends "Error: "), which a
   // substring match alone cannot tell apart from the correct form.
   const [firstLine] = result.stderr.split("\n");
-  assert.equal(firstLine, `mcp-autospawn: ${dir} is accessible to group or other (mode 755); run 'chmod 700 ${dir}' before retrying`);
+  assert.equal(firstLine, `autospawn: ${dir} is accessible to group or other (mode 755); run 'chmod 700 ${dir}' before retrying`);
 });

@@ -2,8 +2,9 @@
 
 ## Process shape
 
-A client (Cursor, Claude Code, Codex) starts `connect` as the MCP server
-process it manages directly. Everything past `connect` in the diagram below
+A client starts `connect` as a process it manages directly: for example,
+Cursor, Claude Code, or Codex starts it as an MCP server, and an agent
+starts it as a command-line tool. Everything past `connect` in the diagram below
 lives outside the client's process tree once startup finishes.
 
 ```
@@ -17,7 +18,7 @@ client
                                                                        │
                                                                        v
                                                               server-command
-                                                             (the real MCP server)
+                                                             (the real server)
 ```
 
 `connect` talks to `serve` over a unix domain socket at
@@ -73,7 +74,7 @@ instead, and gets `{"ok":true}` before `serve` shuts down.
 The fingerprint is `sha256(JSON.stringify(argv))` over the command that
 follows `--` in `connect`'s own invocation — never environment variables.
 `connect` passes it to the resident it starts via
-`MCP_AUTOSPAWN_FINGERPRINT`; wrappers like `op run` pass environment
+`AUTOSPAWN_FINGERPRINT`; wrappers like `op run` pass environment
 through by default, so it reaches `serve` unchanged. Every later `attach`
 carries the fingerprint of whatever command that `connect` invocation was
 given, and `serve` compares it against the one its own resident started

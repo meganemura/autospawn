@@ -6,8 +6,8 @@ Accepted.
 
 ## Context
 
-Somewhere in the command line `mcp-autospawn connect --name x -- op run --
-mcp-autospawn serve -- node server.js`, one point marks where the resident
+Somewhere in the command line `autospawn connect --name x -- op run --
+autospawn serve -- node server.js`, one point marks where the resident
 side (`serve`, receiving connections and spawning server-command per
 connection) takes over from the plain wrapper chain (`op run`, resolving
 secrets and exec'ing onward). That point could be found by convention — for
@@ -17,7 +17,7 @@ sets up the config.
 
 ## Decision
 
-Whoever writes the config writes `mcp-autospawn serve --` explicitly, at
+Whoever writes the config writes `autospawn serve --` explicitly, at
 the point in the chain where the real MCP server should run. `connect`
 never inspects or rewrites the command it is given to find that point.
 

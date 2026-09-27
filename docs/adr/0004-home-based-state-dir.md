@@ -14,8 +14,8 @@ environment, and do not pass most variables through.
 
 ## Decision
 
-The base directory is `$MCP_AUTOSPAWN_DIR` if set, otherwise
-`$HOME/.local/state/mcp-autospawn`. None of `XDG_RUNTIME_DIR`,
+The base directory is `$AUTOSPAWN_DIR` if set, otherwise
+`$HOME/.local/state/autospawn`. None of `XDG_RUNTIME_DIR`,
 `XDG_STATE_HOME`, or `TMPDIR` are consulted.
 
 ## Consequences
@@ -25,7 +25,7 @@ The base directory is `$MCP_AUTOSPAWN_DIR` if set, otherwise
   client environment.
 - Two clients with a reduced environment and no `$HOME` override land in
   the same place, which is the whole point of a shared resident.
-- `MCP_AUTOSPAWN_DIR` remains available for a person who wants a different
+- `AUTOSPAWN_DIR` remains available for a person who wants a different
   location (a shorter path, to fit the unix socket length limit, or a
   separate location for testing).
 

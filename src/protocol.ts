@@ -3,7 +3,7 @@
 // spawn command. Everything after the header is an opaque byte relay that
 // this module does not touch.
 //
-// Not done here: interpreting MCP/JSON-RPC content (mcp-autospawn never
+// Not done here: interpreting the relayed content, MCP or otherwise (autospawn never
 // parses the traffic it relays); enforcing the header timeout against a
 // clock (callers pass in the deadline so this module stays testable without
 // fake timers).

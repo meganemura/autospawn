@@ -20,12 +20,12 @@ test("logPath / spawnLockPath: named suffix examples", () => {
   assert.equal(spawnLockPath("/base", "example"), "/base/example.spawn");
 });
 
-test("baseDir: MCP_AUTOSPAWN_DIR wins when set and non-empty; otherwise falls back to $HOME", () =>
+test("baseDir: AUTOSPAWN_DIR wins when set and non-empty; otherwise falls back to $HOME", () =>
   hegel.test((tc) => {
     const useOverride = tc.draw(gs.booleans());
     if (useOverride) {
       const dir = tc.draw(gs.text({ minSize: 1, maxSize: 20 }));
-      assert.equal(baseDir({ MCP_AUTOSPAWN_DIR: dir }), dir);
+      assert.equal(baseDir({ AUTOSPAWN_DIR: dir }), dir);
       return;
     }
     const home = tc.draw(gs.text({ minSize: 1, maxSize: 20 }));
@@ -33,8 +33,8 @@ test("baseDir: MCP_AUTOSPAWN_DIR wins when set and non-empty; otherwise falls ba
     // used literally.
     const env = tc.draw(gs.booleans())
       ? { HOME: home }
-      : { HOME: home, MCP_AUTOSPAWN_DIR: "" };
-    assert.equal(baseDir(env), path.join(home, ".local", "state", "mcp-autospawn"));
+      : { HOME: home, AUTOSPAWN_DIR: "" };
+    assert.equal(baseDir(env), path.join(home, ".local", "state", "autospawn"));
   }));
 
 // Independent oracle, written from the documented contract
@@ -125,7 +125,7 @@ test("socketPath: passes at exactly 103 bytes, throws PathError at 104+, for dir
         assert.fail("expected socketPath to throw");
       } catch (err) {
         assert.match((err as PathError).message, /socket path is too long/);
-        assert.match((err as PathError).message, /MCP_AUTOSPAWN_DIR/);
+        assert.match((err as PathError).message, /AUTOSPAWN_DIR/);
       }
     }
   }));

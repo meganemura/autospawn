@@ -161,7 +161,7 @@ test("startChain: refuses to start from inside a chain, and spawns nothing", asy
   const logPath = path.join(dir, "chain.log");
   const sockPath = path.join(dir, "unused.sock");
   const spawn = t.mock.method(childProcess, "spawn");
-  process.env.MCP_AUTOSPAWN_IN_CHAIN = "1";
+  process.env.AUTOSPAWN_IN_CHAIN = "1";
   try {
     await assert.rejects(
       startChain(sockPath, logPath, "fp", [path.join(fixturesDir, "exit1")]),
@@ -169,7 +169,7 @@ test("startChain: refuses to start from inside a chain, and spawns nothing", asy
     );
     assert.equal(spawn.mock.callCount(), 0);
   } finally {
-    delete process.env.MCP_AUTOSPAWN_IN_CHAIN;
+    delete process.env.AUTOSPAWN_IN_CHAIN;
     removeStateDir(dir);
   }
 });
@@ -193,7 +193,7 @@ test("fail: writes the message and the log path to stderr, then exits 1", async 
     child.on("close", (code) => resolve({ code, stderr }));
   });
   assert.equal(result.code, 1);
-  assert.equal(result.stderr, `mcp-autospawn connect: boom (log: ${logPath})\n`);
+  assert.equal(result.stderr, `autospawn connect: boom (log: ${logPath})\n`);
 });
 
 function pathToFileUrl(p: string): string {

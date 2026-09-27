@@ -16,7 +16,7 @@ process.
 
 `connect` starts the resident itself, the first time it cannot reach one,
 using the exact command its own client config gives it. No separate daemon
-manager, no install step beyond putting `mcp-autospawn` on `PATH`.
+manager, no install step beyond putting `autospawn` on `PATH`.
 
 ## Consequences
 
@@ -26,7 +26,7 @@ manager, no install step beyond putting `mcp-autospawn` on `PATH`.
   startup cost (and the one 1Password approval); every client after that
   attaches to what it started.
 - No launchd/systemd unit to install, update, or debug.
-- mcp-autospawn depends on nothing keeping the resident alive across a
+- autospawn depends on nothing keeping the resident alive across a
   reboot; after a reboot, the next `connect` starts a fresh one.
 
 ## Rejected alternatives

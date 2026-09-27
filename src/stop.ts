@@ -32,7 +32,7 @@ export async function stop(name: string): Promise<never> {
     } catch {
       // already gone
     }
-    process.stderr.write("mcp-autospawn stop: not running\n");
+    process.stderr.write("autospawn stop: not running\n");
     process.exit(0);
   }
 
@@ -47,9 +47,9 @@ export async function stop(name: string): Promise<never> {
   // difference from outside this process.
   sock.destroy();
   if (reply.ok) {
-    process.stderr.write("mcp-autospawn stop: stopped\n");
+    process.stderr.write("autospawn stop: stopped\n");
     process.exit(0);
   }
-  process.stderr.write(`mcp-autospawn stop: ${reply.message}\n`);
+  process.stderr.write(`autospawn stop: ${reply.message}\n`);
   process.exit(1);
 }

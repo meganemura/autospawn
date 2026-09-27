@@ -15,12 +15,12 @@ export const cliPath = path.join(here, "..", "src", "cli.ts");
 export const fixturesDir = path.join(here, "fixtures");
 
 // Hardcoded /tmp (not os.tmpdir()) by default, for the socket path length
-// reason above; MCP_AUTOSPAWN_TEST_TMP overrides the parent directory so a
+// reason above; AUTOSPAWN_TEST_TMP overrides the parent directory so a
 // mutation run (or anything else that wants its own leftovers contained)
 // can point every test's state dir somewhere it fully controls and can
 // remove in one step, instead of everything landing in shared /tmp.
 export function testTmpParent(): string {
-  const override = process.env.MCP_AUTOSPAWN_TEST_TMP;
+  const override = process.env.AUTOSPAWN_TEST_TMP;
   return override && override.length > 0 ? override : "/tmp";
 }
 
@@ -96,7 +96,7 @@ export function spawnConnect(args: string[], env: NodeJS.ProcessEnv): ChildProce
 
 // Starts `serve` directly, bypassing connect, for tests that need to talk
 // to it over a raw socket or drive races connect would not let them drive.
-// serve refuses to run without MCP_AUTOSPAWN_SOCKET, which is why this
+// serve refuses to run without AUTOSPAWN_SOCKET, which is why this
 // takes sockPath and fingerprint as the caller's own responsibility rather
 // than deriving them the way connect would.
 export function startServeDirect(
@@ -118,8 +118,8 @@ export function startServeDirect(
     {
       env: {
         ...process.env,
-        MCP_AUTOSPAWN_SOCKET: sockPath,
-        MCP_AUTOSPAWN_FINGERPRINT: fingerprint,
+        AUTOSPAWN_SOCKET: sockPath,
+        AUTOSPAWN_FINGERPRINT: fingerprint,
       },
       stdio: ["ignore", "ignore", "ignore"],
     },
@@ -160,7 +160,7 @@ export function readCountFile(file: string): number {
 }
 
 export function baseEnv(stateDir: string): NodeJS.ProcessEnv {
-  return { ...process.env, MCP_AUTOSPAWN_DIR: stateDir };
+  return { ...process.env, AUTOSPAWN_DIR: stateDir };
 }
 
 export const tmpdir = os.tmpdir;

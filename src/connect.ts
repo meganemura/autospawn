@@ -3,9 +3,9 @@
 // relay stdio to the socket byte for byte.
 //
 // Not done here: knowing what the spawn command does (op run, node, or
-// anything else); parsing MCP traffic; writing anything but the relay to
-// stdout (diagnostics go to stderr only, since stdout is the JSON-RPC
-// channel a client reads).
+// anything else); parsing the relayed traffic; writing anything but the
+// relay to stdout (diagnostics go to stderr only, since stdout is the
+// channel the client reads, JSON-RPC for an MCP client).
 import childProcess from "node:child_process";
 import fs from "node:fs";
 import net, { type Socket } from "node:net";
@@ -37,7 +37,7 @@ const CLI_PATH = fileURLToPath(
 // Set in the environment of every chain startChain starts. A process that
 // already has it is inside a chain, so starting another one from there is
 // a recursion, and startChain refuses it.
-const CHAIN_MARKER = "MCP_AUTOSPAWN_IN_CHAIN";
+const CHAIN_MARKER = "AUTOSPAWN_IN_CHAIN";
 
 // Exported for direct, in-process testing of this module's own decision
 // logic (lock lifecycle, chain startup, the attach handshake's error
@@ -72,7 +72,7 @@ export function pidAlive(pid: number): boolean {
 }
 
 export function fail(message: string, log: string): never {
-  process.stderr.write(`mcp-autospawn connect: ${message} (log: ${log})\n`);
+  process.stderr.write(`autospawn connect: ${message} (log: ${log})\n`);
   process.exit(1);
 }
 
@@ -155,8 +155,8 @@ export async function startChain(
       env: {
         ...process.env,
         [CHAIN_MARKER]: "1",
-        MCP_AUTOSPAWN_FINGERPRINT: fingerprint,
-        MCP_AUTOSPAWN_SOCKET: sockPath,
+        AUTOSPAWN_FINGERPRINT: fingerprint,
+        AUTOSPAWN_SOCKET: sockPath,
       },
     },
   );
@@ -194,12 +194,12 @@ export async function attachAndRelay(sock: Socket, fingerprint: string): Promise
     const err = reply as ErrReply;
     if (err.error === "fingerprint_mismatch") {
       process.stderr.write(
-        "mcp-autospawn connect: a resident is already running for this --name " +
-          "with a different command. Run 'mcp-autospawn stop --name <name>' and " +
+        "autospawn connect: a resident is already running for this --name " +
+          "with a different command. Run 'autospawn stop --name <name>' and " +
           "reconnect.\n",
       );
     } else {
-      process.stderr.write(`mcp-autospawn connect: ${err.error}: ${err.message}\n`);
+      process.stderr.write(`autospawn connect: ${err.error}: ${err.message}\n`);
     }
     process.exit(1);
   }
