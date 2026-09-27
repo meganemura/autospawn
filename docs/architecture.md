@@ -38,7 +38,8 @@ just started, if `connect` itself is what spawned it directly.
 anything worth losing. `connect` starts `__spawn`; `__spawn` starts
 spawn-command (the real chain, e.g. `op run`) detached, writes its pid to
 its own stdout, and exits. From that point, spawn-command's parent is
-`__spawn`, which is already gone, so the OS reparents it to launchd (pid 1).
+`__spawn`, which is already gone, so the OS reparents it to pid 1
+(launchd on macOS; init, or a subreaper, on Linux).
 A tree-kill rooted at `connect` no longer reaches it, because it is no
 longer a descendant of `connect` by the time `connect` gets killed.
 
@@ -59,12 +60,16 @@ connect -> serve: {"v":1,"op":"attach","fingerprint":"<sha256 of argv>"}\n
 serve   -> connect: {"ok":true}\n                                  (or {"ok":false,"error":"...","message":"..."})
 ```
 
-`serve` reads only up to the first `\n`, at up to 64 KiB and 5 seconds; a
-header that never arrives, arrives malformed, or arrives too large gets its
-connection closed rather than a reply. Bytes that arrive after that first
-`\n` in the same read are put back on the socket before either side treats
-the connection as a plain byte relay, so a client that pipelines its first
-message right after the header loses nothing.
+`serve` reads only up to the first `\n`, at up to 64 KiB and 5 seconds. A
+header that never arrives, is not valid JSON, or is too large gets its
+connection closed without a reply. Valid JSON that is neither attach nor
+stop gets a `bad_header` reply, and an attach with the wrong fingerprint
+gets a `fingerprint_mismatch` reply, before the connection closes.
+
+Bytes that arrive after that first `\n` in the same read are put back on
+the socket before either side treats the connection as a plain byte
+relay, so a client that pipelines its first message right after the
+header loses nothing.
 
 `stop --name <name>` uses the same socket with `{"v":1,"op":"stop"}`
 instead, and gets `{"ok":true}` before `serve` shuts down.
@@ -138,10 +143,12 @@ holds, and (absent `--idle-timeout`) never exits.
 
 `serve` guards against this by recording the socket path's inode and
 device right after a successful bind, then checking that the path still
-resolves to the same inode and device — once a second, and again on every
-new connection. A mismatch (or the path being gone) means this resident is
-no longer the one clients will reach. It stops accepting new connections,
-and once its own connection count reaches zero, exits.
+resolves to the same inode and device, once a second. There is no check
+on each new connection: clients connect by path, so once the path points
+elsewhere, no new client can reach this resident. A mismatch (or the path
+being gone) means this resident is no longer the one clients will reach.
+It logs that once, marks itself displaced, and exits once it has no
+running children.
 
 It exits with `process.exit()` directly, not `server.close()`. Node's
 `net.Server.close()` unlinks whatever file currently sits at the path it
@@ -152,14 +159,17 @@ alone, since it was verified that no cleanup call runs for a plain
 
 ## Lifecycle
 
-- `serve` binds, chmods the socket to 0600, and starts accepting.
+- `serve` checks the base directory, binds and starts listening, then
+  chmods the socket to 0600.
 - Each connection spawns one server-command child; the socket and the
   child's stdio are wired together until either side closes.
 - `stop`, SIGTERM, and SIGINT all run the same shutdown: SIGTERM every
   child, then `server.close()` (which unlinks the resident's own socket,
   since it still owns the path at that point), then exit 0.
-- With `--idle-timeout`, reaching zero connections starts a timer for that
-  many seconds; a new connection cancels it; firing runs the same shutdown.
+- With `--idle-timeout`, a timer for that many seconds starts at startup
+  and whenever the last running child closes. An accepted attach, which
+  starts a child, cancels it. A stop, a header still being read, or a
+  refused attach does not. Firing runs the same shutdown.
 - A resident that loses the ownership race above runs a different exit path
   (see the previous section): no `close()`, no unlink, just `process.exit()`
-  once its connection count reaches zero.
+  once it has no running children.

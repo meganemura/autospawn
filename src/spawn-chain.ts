@@ -9,7 +9,7 @@
 // exists to avoid. This process detaches the real spawn-command from
 // connect's process tree, writes its pid, and exits immediately, so nothing
 // under connect stays alive for a tree-kill to reach; the chain is
-// reparented to launchd (pid 1).
+// reparented to pid 1 (launchd on macOS, init or a subreaper on Linux).
 //
 // Not done here: waiting for the spawned command to exit, or reporting its
 // exit code (connect can no longer observe it once this process exits; it

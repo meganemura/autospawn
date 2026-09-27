@@ -66,5 +66,5 @@ once.
   architecture.md), so a waiter has no
   descendant relationship to that pid to make watching it meaningful, and
   the pid could be recycled by the time a waiter checks it. Age of the
-  lock file, compared against the holder's own advertised `--timeout`, is
+  lock file, compared against the waiting connect's own `--timeout`, is
   the signal that survives the holder's death.

@@ -7,7 +7,8 @@ client shares it.
 
 The resident starts once, through a command you choose, such as a secret
 resolver. It then starts your program as a fresh child for each
-connection, with the environment it got at that one start. autospawn
+connection, with the environment it got at that one start, minus
+autospawn's own `AUTOSPAWN_*` variables. autospawn
 relays bytes and does not read them, so any stdio program works: an MCP
 server, a command-line tool, or a long-running watcher.
 
@@ -35,6 +36,9 @@ start.
 ```sh
 npm install -g autospawn
 ```
+
+autospawn needs Node.js 24.10 or later, and runs on macOS and Linux. It
+talks over Unix domain sockets, so it does not run on Windows.
 
 ## Example: 1Password
 
@@ -118,6 +122,10 @@ If you change the 1Password item, or anything else the running server
 depends on, run `autospawn stop --name example` so the next connect
 starts a fresh resident with the new values.
 
+If you change the `--name` itself, stop the resident under the old name
+too. Nothing connects to it any more, but it keeps running, and it keeps
+the secrets it resolved.
+
 ## Example: a command-line tool
 
 The same shape works for a program that is not an MCP server. Here, an
@@ -151,21 +159,25 @@ to come up — long enough for a person to approve a 1Password prompt.
 Listens on the resident's socket and starts `<command...>` as a fresh child
 for every connection it accepts. Only `connect` starts `serve`; running it
 directly fails, since it needs environment variables that `connect` sets.
-With `--idle-timeout`, serve exits once it has had zero connections for
+With `--idle-timeout`, serve exits once it has had no running children for
 that many seconds. Without it, serve runs until stopped.
 
 ### `autospawn stop --name <name>`
 
-Asks the resident named `<name>` to shut down. Exits 0 whether or not one
-was running.
+Asks the resident named `<name>` to shut down. Exits 0 if it stopped a
+resident or found none running, and 1 on an error.
 
 ## Files
 
-autospawn keeps a socket and a log file per name, under a base
-directory:
+autospawn keeps a socket, a log file, and a spawn lock per name, under a
+base directory:
 
-- `$AUTOSPAWN_DIR` if set, otherwise `$HOME/.local/state/autospawn`.
-- `<base>/<name>.sock`, `<base>/<name>.log`.
+- `$AUTOSPAWN_DIR` if set and not empty, otherwise
+  `$HOME/.local/state/autospawn`.
+- `<base>/<name>.sock`, `<base>/<name>.log`, and `<base>/<name>.spawn`.
+  The spawn lock exists while a connect starts a resident. A connect that
+  was killed at that moment can leave it behind; the next connect removes
+  it once it is older than that connect's `--timeout`.
 
 The base directory is created with mode 0700. If it already exists with
 looser permissions, or a different owner, autospawn refuses to use it.
@@ -188,7 +200,14 @@ the new value.
 ## Security properties
 
 Any process running as your user that can reach `<base>/<name>.sock` can
-attach to the resident and use whatever the resident's environment can do —
-including the secrets a wrapper like `op run` resolved into it. The base
-directory's permission check keeps other users out; it does not
-distinguish between your own processes.
+attach to the resident. The resident then starts its configured program
+for that process, in an environment that holds the secrets a wrapper like
+`op run` resolved. The caller cannot change the program or its arguments,
+but it can use the program in the same way you do. The base directory's
+permission check keeps other users out; it does not distinguish between
+your own processes.
+
+## Design
+
+See [docs/](docs/README.md) for the architecture, the design decisions,
+and the known limitations.
