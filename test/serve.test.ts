@@ -2,7 +2,7 @@
 // resident's idle timeout, its log, and the connections it holds. Every
 // serve a test starts is killed in that test's cleanup, since a mutated
 // serve may never exit on its own.
-import { type ChildProcess } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
@@ -329,4 +329,83 @@ test("a serve that lost its socket waits for its last child, not its first, befo
   assert.equal(await exitWithin(serve, 1500), "still running");
   second.end();
   assert.deepEqual(await exitWithin(serve, 5000), { code: 0, signal: null });
+});
+
+test("serve makes its socket readable and writable by its owner only", async (t) => {
+  const { sockPath } = await startedServe(t, "mode");
+  assert.equal(fs.statSync(sockPath).mode & 0o777, 0o600);
+});
+
+test("with no connection at all, the idle timeout still ends serve", async (t) => {
+  const dir = stateDir(t);
+  const serve = startServeDirect(path.join(dir, "neverused.sock"), FINGERPRINT, "echo-server", 1);
+  killOnCleanup(t, serve);
+  assert.deepEqual(await exitWithin(serve, 5000), { code: 0, signal: null });
+});
+
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  test(`${signal} makes serve remove its socket and exit 0`, async (t) => {
+    const { serve, sockPath } = await startedServe(t, `sig-${signal.toLowerCase()}`);
+    serve.kill(signal);
+    assert.deepEqual(await exitWithin(serve, 5000), { code: 0, signal: null });
+    assert.equal(fs.existsSync(sockPath), false);
+  });
+}
+
+test("SIGTERM to a serve that lost its socket leaves the new resident's socket alone", async (t) => {
+  const { serve: serveA, sockPath } = await startedServe(t, "sigafterloss");
+  // A client attached to serveA keeps it draining after the loss, so only
+  // the signal can end it.
+  const client = await attachRaw(sockPath, FINGERPRINT);
+  client.on("error", () => {});
+  fs.unlinkSync(sockPath);
+  const serveB = startServeDirect(sockPath, FINGERPRINT, "echo-server", 60);
+  killOnCleanup(t, serveB);
+  await waitFor(() => fs.existsSync(sockPath), { timeoutMs: 5000 });
+  const inodeB = fs.statSync(sockPath).ino;
+  await sleep(1500);
+  assert.equal(await exitWithin(serveA, 100), "still running");
+
+  serveA.kill("SIGTERM");
+  assert.deepEqual(await exitWithin(serveA, 5000), { code: 0, signal: null });
+  assert.equal(fs.existsSync(sockPath), true, "serveB's socket must survive");
+  assert.equal(fs.statSync(sockPath).ino, inodeB);
+});
+
+test("a second serve on a path where one already listens logs it and steps aside", async (t) => {
+  const { sockPath, dir } = await startedServe(t, "occupied");
+  const logPath = path.join(dir, "second-serve.log");
+  const logFd = fs.openSync(logPath, "a");
+  t.after(() => fs.closeSync(logFd));
+
+  const second = startServeDirect(sockPath, FINGERPRINT, "echo-server", 60, { stderrFd: logFd });
+  killOnCleanup(t, second);
+  assert.deepEqual(await exitWithin(second, 5000), { code: 0, signal: null });
+  assert.match(fs.readFileSync(logPath, "utf8"), /\[serve\] another resident is already listening; exiting/);
+
+  const client = await attachRaw(sockPath, FINGERPRINT);
+  client.destroy();
+});
+
+// A stale socket that serve cannot remove must not make it retry forever.
+test("a stale socket in a directory serve cannot write ends serve with an error", async (t) => {
+  const dir = stateDir(t);
+  const sockPath = path.join(dir, "stuck.sock");
+  const holder = spawn(process.execPath, ["-e", 'require("node:net").createServer().listen(process.argv[1])', sockPath], {
+    stdio: "ignore",
+  });
+  killOnCleanup(t, holder);
+  await waitFor(() => fs.existsSync(sockPath), { timeoutMs: 5000 });
+  holder.kill("SIGKILL");
+  await waitFor(() => isDead(holder.pid!), { timeoutMs: 5000 });
+  assert.equal(fs.existsSync(sockPath), true, "the killed listener leaves its socket file behind");
+
+  fs.chmodSync(dir, 0o500);
+  try {
+    const serve = startServeDirect(sockPath, FINGERPRINT, "echo-server", 60);
+    killOnCleanup(t, serve);
+    assert.deepEqual(await exitWithin(serve, 5000), { code: 1, signal: null });
+  } finally {
+    fs.chmodSync(dir, 0o700);
+  }
 });

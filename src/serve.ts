@@ -253,8 +253,7 @@ export async function serve(
   // chmodSync just succeeded on it. This only narrows the type.
   if (ownership === null) throw new Error(`socket ${sockPath} vanished right after listen`);
   scheduleIdleCheck();
-  const ownershipTimer = setInterval(() => checkOwnership(ownership), 1000);
-  ownershipTimer.unref?.();
+  setInterval(() => checkOwnership(ownership), 1000);
 
   const onSignal = () => {
     if (raceLost) exitWithoutUnlink();
@@ -274,19 +273,29 @@ function bindListener(server: net.Server, sockPath: string): Promise<void> {
     let unlinkedOnce = false;
 
     const onError = (err: NodeJS.ErrnoException) => {
+      // Stryker disable next-line ConditionalExpression,BlockStatement: any
+      // other listen error also fails the probe below (nothing listens on a
+      // path that could not be bound), and that path rejects the same err.
       if (err.code !== "EADDRINUSE") {
         reject(err);
         return;
       }
       const probe = net.connect(sockPath);
       probe.once("connect", () => {
+        // Stryker disable next-line CallExpression: process.exit below
+        // closes the probe with everything else.
         probe.destroy();
         logLine("another resident is already listening; exiting");
         process.exit(0);
       });
+      // A socket that fails is destroyed already, so there is no destroy
+      // here.
       probe.once("error", (probeErr: NodeJS.ErrnoException) => {
-        probe.destroy();
-        if (probeErr.code === "ECONNREFUSED" && !unlinkedOnce) {
+        // Stryker disable next-line ConditionalExpression: retrying once on
+        // another probe error, such as the path vanishing in between, does
+        // no harm, since unlinkedOnce still bounds it to a single retry.
+        const refused = probeErr.code === "ECONNREFUSED";
+        if (refused && !unlinkedOnce) {
           unlinkedOnce = true;
           try {
             fs.unlinkSync(sockPath);
@@ -302,6 +311,9 @@ function bindListener(server: net.Server, sockPath: string): Promise<void> {
 
     server.on("error", onError);
     server.once("listening", () => {
+      // Stryker disable next-line StringLiteral: no test can make a
+      // listening server emit an error, so keeping onError attached after
+      // this point has no effect a test can see.
       server.removeListener("error", onError);
       resolve();
     });
