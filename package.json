@@ -1,6 +1,6 @@
 {
   "name": "autospawn",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Attach-or-spawn launcher for stdio programs, such as MCP servers, so a secret-resolving wrapper starts once and every client shares it.",
   "type": "module",
   "bin": {

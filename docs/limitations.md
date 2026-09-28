@@ -1,6 +1,6 @@
 # Known limitations
 
-These are gaps in autospawn 0.1 that are known and not fixed yet. None of
+These are gaps in autospawn 0.2 that are known and not fixed yet. None of
 them leaks a secret to another user.
 
 ## A child that ignores the end of its input can outlive its client

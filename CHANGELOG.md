@@ -1,6 +1,6 @@
 # Changelog
 
-## (unreleased)
+## 0.2.0 (2026-09-28)
 
 - serve closes a connection that ends its side before sending a header at
   once. It used to wait out the 5-second header timeout.
