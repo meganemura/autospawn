@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Not implemented yet.
+Accepted.
 
 ## Context
 
@@ -37,8 +37,9 @@ Frame the direction from `serve` to `connect`, when both sides support it.
 - The direction from `connect` to `serve` stays a raw stream: it is the
   child's stdin, and its end is the end of the stream.
 - `connect` exits with the child's code. A child ended by a signal gives
-  128 plus the signal's number, as a shell does. A framed connection that
-  closes before an exit frame gives 1, with a message on stderr.
+  128 plus the signal's number, as a shell does, and a command that
+  cannot start gives 127. A framed connection that closes before an exit
+  frame gives 1, with a message on stderr.
 
 ## Consequences
 

@@ -13,6 +13,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import net, { type Socket } from "node:net";
 import path from "node:path";
+import { encodeExit, encodeFrame, FRAME_DATA } from "./frames.ts";
 import { childParamEnv, type Params } from "./params.ts";
 import { ensureBaseDir } from "./paths.ts";
 import {
@@ -193,15 +194,21 @@ export async function serve(
       return;
     }
 
-    await writeLine(socket, { ok: true });
-    spawnChild(socket, paramEnv.value);
+    // Frame only when connect asks: a connect from 0.1.0 reads raw bytes.
+    const framed = header.frames === 1;
+    await writeLine(socket, framed ? { ok: true, frames: 1 } : { ok: true });
+    spawnChild(socket, paramEnv.value, framed);
     // readHeaderLine paused the socket once it found the header line;
     // spawnChild has now attached the relay listeners, so it is safe to
     // let bytes flow again.
     socket.resume();
   }
 
-  function spawnChild(socket: Socket, paramEnv: Readonly<Record<string, string>>): void {
+  function spawnChild(
+    socket: Socket,
+    paramEnv: Readonly<Record<string, string>>,
+    framed: boolean,
+  ): void {
     const [cmd, ...args] = serverCommand;
     // stdio defaults to three pipes. A command that cannot start reports it
     // through the "error" event below, not a throw; spawn throws only for
@@ -211,10 +218,16 @@ export async function serve(
     children.add(child);
 
     // A command that cannot start emits "error" and then "close"; the close
-    // handler below ends the socket.
-    child.on("error", (err) => logLine(`server-command error: ${err.message}`));
+    // handler below ends the socket, and reports 127, as a shell does.
+    let failedToStart = false;
+    child.on("error", (err) => {
+      failedToStart = true;
+      logLine(`server-command error: ${err.message}`);
+    });
 
-    child.stdout!.on("data", (chunk: Buffer) => socket.write(chunk));
+    child.stdout!.on("data", (chunk: Buffer) =>
+      socket.write(framed ? encodeFrame(FRAME_DATA, chunk) : chunk),
+    );
     child.stderr!.on("data", (chunk: Buffer) => process.stderr.write(chunk));
     // Stryker disable next-line StringLiteral,CallExpression: a write that races the
     // child's exit fails with EPIPE here. No test can place a write inside
@@ -231,8 +244,13 @@ export async function serve(
     socket.on("close", () => child.kill("SIGTERM"));
     socket.on("error", () => {});
 
-    child.on("close", () => {
+    // "close" comes after the child's stdout has ended, so every data frame
+    // is already written when the exit frame goes out.
+    child.on("close", (code, signal) => {
       children.delete(child);
+      if (framed) {
+        socket.write(encodeExit(failedToStart ? { code: 127, signal: null } : { code, signal }));
+      }
       socket.end();
       if (raceLost && children.size === 0) {
         exitWithoutUnlink();

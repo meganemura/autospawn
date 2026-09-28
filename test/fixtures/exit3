@@ -1,0 +1,4 @@
+#!/bin/sh
+# Writes one line, then exits 3, so a test can check that connect exits 3.
+printf 'out\n'
+exit 3

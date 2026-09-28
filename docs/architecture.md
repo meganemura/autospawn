@@ -78,6 +78,22 @@ header loses nothing.
 `stop --name <name>` uses the same socket with `{"v":1,"op":"stop"}`
 instead, and gets `{"ok":true}` before `serve` shuts down.
 
+## Framed output
+
+connect adds `"frames":1` to its attach header. A serve that frames
+replies `{"ok":true,"frames":1}` and from then on sends the child's
+stdout in frames: one type byte, a 4-byte big-endian length, and the
+payload. Type 1 carries a chunk of stdout. Type 2, sent once and last,
+carries `{"code":...,"signal":...}` after the child exits; a command that
+could not start reports code 127. connect writes the data to its stdout
+and exits with the child's code, or 128 plus a signal's number.
+
+The direction from connect to serve stays raw: it is the child's stdin.
+Either side falls back to a raw relay when the other does not know about
+frames, since a resident keeps running across an upgrade (see ADR 0009).
+connect skips a frame type it does not know, so a later serve can add
+one.
+
 ## The fingerprint
 
 The fingerprint is `sha256(JSON.stringify(argv))` over the command that

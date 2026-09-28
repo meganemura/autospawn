@@ -141,10 +141,9 @@ autospawn connect --name example-cli -- \
   example-tool fetch
 ```
 
-The tool's output arrives on stdout, as if you had run `example-tool
-fetch` directly. One difference: `connect` exits 0 when the output ends,
-whatever exit code the tool itself returned. `--idle-timeout` ends the
-resident after an hour with no connections.
+The tool's output arrives on stdout, and `connect` exits with the tool's
+exit code, as if you had run `example-tool fetch` directly.
+`--idle-timeout` ends the resident after an hour with no connections.
 
 ## Commands
 
@@ -157,6 +156,12 @@ stdout, byte for byte; all diagnostics go to stderr. `--timeout` (default
 to come up — long enough for a person to approve a 1Password prompt.
 `--param` sends a value for this connection only; see "Per-connection
 values" below.
+
+connect exits with the program's exit code. A program ended by a signal
+gives 128 plus the signal's number, and a program that cannot start gives
+127, as a shell does. A connection that ends before the program's status
+arrives gives 1. A resident started by autospawn 0.1.0 does not send the
+status; with one, connect exits 0.
 
 ### `autospawn serve [--idle-timeout <seconds>] [--param <key>=<ENV_NAME>]... -- <command...>`
 

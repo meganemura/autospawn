@@ -130,9 +130,7 @@ autospawn connect --name example-cli -- \
   example-tool fetch
 ```
 
-ツールの出力は、`example-tool fetch` を直接実行した場合と同様に標準出力へ送られます。
-相違点が一つあります。
-ツール自体が返した終了コードにかかわらず、出力が終わると `connect` は終了コード 0 で終了します。
+ツールの出力は、`example-tool fetch` を直接実行した場合と同様に標準出力へ送られ、`connect` はツールの終了コードで終了します。
 `--idle-timeout` は、接続がない状態が1時間続くと常駐プロセスを終了します。
 
 ## コマンド
@@ -145,6 +143,11 @@ autospawn connect --name example-cli -- \
 この時間は、利用者が 1Password のプロンプトを承認するのに十分な長さです。
 `--param` は、この接続だけの値を送ります。
 詳しくは、下の「接続ごとの値」を参照してください。
+
+connect は、プログラムの終了コードで終了します。
+シグナルで終了したプログラムの場合は 128 にシグナルの番号を足した値、起動できなかったプログラムの場合は 127 になり、シェルと同じです。
+プログラムの終了状態が届く前に接続が切れた場合は 1 になります。
+autospawn 0.1.0 が起動した常駐プロセスは終了状態を送らないので、その場合 connect は終了コード 0 で終了します。
 
 ### `autospawn serve [--idle-timeout <seconds>] [--param <key>=<ENV_NAME>]... -- <command...>`
 

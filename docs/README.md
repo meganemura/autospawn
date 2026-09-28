@@ -15,4 +15,4 @@
 - [0006. A spawn lock file, so only one connect starts the chain](adr/0006-spawn-lock.md)
 - [0007. Not limited to MCP, and named autospawn](adr/0007-not-limited-to-mcp.md)
 - [0008. Per-connection values travel as declared environment variables](adr/0008-per-connection-params.md)
-- [0009. Frame the output, so connect can exit with the child's status](adr/0009-framed-output-with-exit-status.md) (not implemented yet)
+- [0009. Frame the output, so connect can exit with the child's status](adr/0009-framed-output-with-exit-status.md)

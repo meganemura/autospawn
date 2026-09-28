@@ -3,12 +3,6 @@
 These are gaps in autospawn 0.1 that are known and not fixed yet. None of
 them leaks a secret to another user.
 
-## connect does not pass on the child's exit code
-
-`connect` exits 0 when the relay ends, whatever exit code the program
-returned. An MCP client does not look at it, but a command-line caller
-that checks `$?` cannot tell success from failure. See ADR 0007.
-
 ## A child that ignores the end of its input can outlive its client
 
 serve keeps each connection half open after the client ends its side, so

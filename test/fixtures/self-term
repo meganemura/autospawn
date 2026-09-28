@@ -1,0 +1,6 @@
+#!/bin/sh
+# Writes one line, then ends itself with SIGTERM, so a test can check that
+# connect exits 128 plus the signal number.
+printf 'out\n'
+kill -TERM $$
+sleep 5

@@ -11,6 +11,7 @@ import fs from "node:fs";
 import net, { type Socket } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { exitCodeFor, FRAME_DATA, FRAME_EXIT, FrameDecoder, parseExit, type ExitStatus } from "./frames.ts";
 import type { Params } from "./params.ts";
 import { baseDir, ensureBaseDir, logPath, socketPath, spawnLockPath } from "./paths.ts";
 import {
@@ -200,6 +201,33 @@ export async function startChain(
   return pid;
 }
 
+// Framed output (ADR 0009): data frames go to stdout, and the exit frame
+// sets connect's exit code. A frame type this version does not know is
+// skipped, so a later serve can add one. A connection that closes before
+// the exit frame exits 1, since the child's status is unknown.
+function relayFrames(sock: Socket): void {
+  const decoder = new FrameDecoder();
+  let status: ExitStatus | null = null;
+  sock.on("data", (chunk: Buffer) => {
+    try {
+      for (const frame of decoder.push(chunk)) {
+        if (frame.type === FRAME_DATA) process.stdout.write(frame.payload);
+        else if (frame.type === FRAME_EXIT) status = parseExit(frame.payload);
+      }
+    } catch (err) {
+      process.stderr.write(`autospawn connect: bad frame from the resident: ${(err as Error).message}\n`);
+      process.exit(1);
+    }
+  });
+  sock.on("close", () => {
+    if (status === null) {
+      process.stderr.write("autospawn connect: the connection closed before the program's exit status arrived\n");
+    }
+    const code = status === null ? 1 : exitCodeFor(status);
+    process.stdout.write("", () => process.exit(code));
+  });
+}
+
 export async function attachAndRelay(
   sock: Socket,
   fingerprint: string,
@@ -207,7 +235,9 @@ export async function attachAndRelay(
 ): Promise<never> {
   // params goes out even when empty: a serve from before --param ignores
   // the field, and a newer one treats {} as no parameters.
-  const header = { v: 1, op: "attach", fingerprint, params };
+  // frames: 1 asks for framed output, so connect can exit with the
+  // child's status. A serve from 0.1.0 ignores it and relays raw.
+  const header = { v: 1, op: "attach", fingerprint, params, frames: 1 };
   await new Promise<void>((resolve, reject) => {
     sock.write(encodeLine(header), (err) =>
       err ? reject(err) : resolve(),
@@ -230,10 +260,14 @@ export async function attachAndRelay(
 
   process.stdin.on("data", (chunk: Buffer) => sock.write(chunk));
   process.stdin.on("end", () => sock.end());
-  sock.on("data", (chunk: Buffer) => process.stdout.write(chunk));
-  sock.on("close", () => {
-    process.stdout.write("", () => process.exit(0));
-  });
+  if (reply.frames === 1) {
+    relayFrames(sock);
+  } else {
+    sock.on("data", (chunk: Buffer) => process.stdout.write(chunk));
+    sock.on("close", () => {
+      process.stdout.write("", () => process.exit(0));
+    });
+  }
   // Stryker disable next-line StringLiteral,ArrowFunction,CallExpression: measured (three
   // probes: a same-process destroy(err), a destroy(err) from the accepting
   // side, and a SIGKILL of the peer's whole process) that a unix domain

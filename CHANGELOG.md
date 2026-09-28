@@ -2,6 +2,10 @@
 
 ## (unreleased)
 
+- connect exits with the program's exit code, 128 plus a signal's number,
+  or 127 for a command that cannot start. serve frames the program's
+  output so the status can follow it, when both sides support it. See
+  ADR 0009.
 - `connect --param key=value` sends a value for one connection, and
   `serve --param key=ENV_NAME` declares which keys it accepts and the
   variable each one sets in the child. Connections with different values

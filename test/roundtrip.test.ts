@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import net from "node:net";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -292,4 +293,90 @@ test("--param: serve refuses to declare a variable its environment already holds
   );
   assert.equal(result.code, 2);
   assert.match(result.stderr, /would replace HOME, which is already set/);
+});
+
+// Exit status (ADR 0009): connect exits the way the child did.
+for (const [server, code, why] of [
+  ["exit3", 3, "the child's own code"],
+  ["self-term", 143, "128 plus SIGTERM's number"],
+  ["no-such-server", 127, "127 for a command that cannot start"],
+] as const) {
+  test(`connect exits with ${why}`, async (t) => {
+    const dir = makeStateDir();
+    const name = `exit-${server}`;
+    const env = baseEnv(dir);
+    t.after(async () => {
+      await runCli(["stop", "--name", name], { env });
+      removeStateDir(dir);
+    });
+    const result = await runCli(["connect", "--name", name, "--", ...chainArgs(server)], { env, input: "" });
+    assert.equal(result.code, code, result.stderr);
+    assert.equal(result.stdout, server === "no-such-server" ? "" : "out\n");
+  });
+}
+
+// A fake resident on the socket, so a test can play a serve from 0.1.0 or
+// a serve that breaks off. It answers the attach header with `reply`, then
+// writes `body` and closes.
+async function fakeResident(
+  sockPath: string,
+  reply: string,
+  body: Buffer,
+): Promise<{ server: net.Server; headers: string[] }> {
+  const headers: string[] = [];
+  const server = net.createServer((sock) => {
+    let buf = "";
+    sock.on("data", (chunk: Buffer) => {
+      buf += chunk.toString("utf8");
+      const idx = buf.indexOf("\n");
+      if (idx === -1 || headers.length > 0) return;
+      headers.push(buf.slice(0, idx));
+      sock.write(reply + "\n");
+      sock.end(body);
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(sockPath, resolve));
+  fs.chmodSync(sockPath, 0o600);
+  return { server, headers };
+}
+
+test("connect falls back to the raw relay for a serve that does not frame, and exits 0", async (t) => {
+  const dir = makeStateDir();
+  const { server, headers } = await fakeResident(path.join(dir, "oldserve.sock"), '{"ok":true}', Buffer.from("raw bytes\n"));
+  t.after(() => {
+    server.close();
+    removeStateDir(dir);
+  });
+  const result = await runCli(["connect", "--name", "oldserve", "--", "unused"], { env: baseEnv(dir), input: "" });
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.stdout, "raw bytes\n");
+  assert.equal(JSON.parse(headers[0]!).frames, 1, "connect asks for frames");
+});
+
+test("connect exits 1 when a framed connection closes before the exit frame", async (t) => {
+  const dir = makeStateDir();
+  const data = Buffer.from("partial\n");
+  const frame = Buffer.concat([Buffer.from([1, 0, 0, 0, data.length]), data]);
+  const { server } = await fakeResident(path.join(dir, "cutoff.sock"), '{"ok":true,"frames":1}', frame);
+  t.after(() => {
+    server.close();
+    removeStateDir(dir);
+  });
+  const result = await runCli(["connect", "--name", "cutoff", "--", "unused"], { env: baseEnv(dir), input: "" });
+  assert.equal(result.code, 1);
+  assert.equal(result.stdout, "partial\n");
+  assert.match(result.stderr, /closed before the program's exit status arrived/);
+});
+
+test("connect exits 1 with a message on a frame it cannot read", async (t) => {
+  const dir = makeStateDir();
+  const bad = Buffer.from([2, 0, 0, 0, 4, ...Buffer.from("null")]);
+  const { server } = await fakeResident(path.join(dir, "badframe.sock"), '{"ok":true,"frames":1}', bad);
+  t.after(() => {
+    server.close();
+    removeStateDir(dir);
+  });
+  const result = await runCli(["connect", "--name", "badframe", "--", "unused"], { env: baseEnv(dir), input: "" });
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /bad frame from the resident: exit frame is not \{code, signal\}/);
 });

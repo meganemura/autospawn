@@ -20,11 +20,15 @@ export type AttachHeader = {
   op: "attach";
   fingerprint: string;
   params?: Readonly<Record<string, string>>;
+  // 1 asks serve to frame its output (ADR 0009). A serve that does not
+  // know the field ignores it and relays raw.
+  frames?: number;
 };
 export type StopHeader = { v: 1; op: "stop" };
 export type ClientHeader = AttachHeader | StopHeader;
 
-export type OkReply = { ok: true };
+// frames: 1 says serve frames its output on this connection.
+export type OkReply = { ok: true; frames?: number };
 export type ErrReply = { ok: false; error: string; message: string };
 export type ServerReply = OkReply | ErrReply;
 
