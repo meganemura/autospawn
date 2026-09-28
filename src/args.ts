@@ -78,8 +78,9 @@ export function takeRepeated(
       if (value === undefined) return err(`option '${flag}' needs a value`);
       values.push(value);
     } else {
-      rest.push(arg);
-      if (value !== undefined) rest.push(value);
+      // The pair as it stands; a trailing flag with no value stays alone,
+      // for parseFlags to report.
+      rest.push(...args.slice(i, i + 2));
     }
   }
   return ok({ rest, values });

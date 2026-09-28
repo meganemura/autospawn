@@ -108,3 +108,32 @@ test("isAttachHeader: params is optional, and must map strings to strings when p
   assert.equal(isAttachHeader({ ...base, params: ["x"] }), false);
   assert.equal(isAttachHeader({ ...base, params: null }), false);
 });
+
+test("parameter names are checked over their whole length, not only a prefix", () => {
+  assert.equal(parseConnectParams(["topic!=x"]).ok, false);
+  assert.equal(parseConnectParams(["topic x=x"]).ok, false);
+  assert.equal(parseServeParams(["topic=EXAMPLE-TOPIC"], {}).ok, false);
+  assert.equal(parseServeParams(["topic=EXAMPLE TOPIC"], {}).ok, false);
+});
+
+test("parameter errors say what is wrong", () => {
+  const cases: [ReturnType<typeof parseConnectParams>, RegExp][] = [
+    [parseConnectParams(["topic"]), /^--param 'topic' is not key=value$/],
+    [parseConnectParams(["topic=a", "topic=b"]), /^--param 'topic' is given twice$/],
+    [parseConnectParams([`topic=${"a".repeat(4097)}`]), /^parameter 'topic' is longer than 4096 bytes$/],
+  ];
+  for (const [result, pattern] of cases) {
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.error, pattern);
+  }
+  const missing = takeRepeated(["--param"], "--param");
+  assert.equal(missing.ok, false);
+  if (!missing.ok) assert.equal(missing.error, "option '--param' needs a value");
+});
+
+test("isAttachHeader: params that are not an object of strings are refused", () => {
+  const base = { v: 1, op: "attach", fingerprint: "f" };
+  assert.equal(isAttachHeader({ ...base, params: "topic" }), false);
+  assert.equal(isAttachHeader({ ...base, params: 5 }), false);
+  assert.equal(isAttachHeader({ ...base, params: { a: "x", b: 1 } }), false);
+});

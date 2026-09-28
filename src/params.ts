@@ -33,7 +33,7 @@ export function valueError(key: string, value: string): string | null {
   if (CONTROL_CHAR.test(value)) {
     return `parameter '${key}' has a control character in its value`;
   }
-  if (Buffer.byteLength(value, "utf8") > MAX_VALUE_BYTES) {
+  if (Buffer.byteLength(value) > MAX_VALUE_BYTES) {
     return `parameter '${key}' is longer than ${MAX_VALUE_BYTES} bytes`;
   }
   return null;

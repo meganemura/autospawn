@@ -205,9 +205,9 @@ export async function attachAndRelay(
   fingerprint: string,
   params: Params = {},
 ): Promise<never> {
-  const header = Object.keys(params).length > 0
-    ? { v: 1, op: "attach", fingerprint, params }
-    : { v: 1, op: "attach", fingerprint };
+  // params goes out even when empty: a serve from before --param ignores
+  // the field, and a newer one treats {} as no parameters.
+  const header = { v: 1, op: "attach", fingerprint, params };
   await new Promise<void>((resolve, reject) => {
     sock.write(encodeLine(header), (err) =>
       err ? reject(err) : resolve(),
