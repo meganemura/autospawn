@@ -409,3 +409,35 @@ test("a stale socket in a directory serve cannot write ends serve with an error"
     fs.chmodSync(dir, 0o700);
   }
 });
+
+test("a child closing while another connection is still being set up does not start the idle timeout", async (t) => {
+  const sockPath = path.join(stateDir(t), "overlap.sock");
+  const short = startServeDirect(sockPath, FINGERPRINT, "echo-server", 1);
+  killOnCleanup(t, short);
+  await waitFor(() => fs.existsSync(sockPath), { timeoutMs: 5000 });
+
+  const pendingClient = await openRaw(sockPath);
+  const attached = await attachRaw(sockPath, FINGERPRINT);
+  const attachedClosed = new Promise<void>((resolve) => attached.once("close", () => resolve()));
+  attached.end();
+  await attachedClosed;
+
+  // Past the 1s idle timeout, with pendingClient still sending no header.
+  await sleep(1800);
+  assert.equal(fs.existsSync(sockPath), true, "the resident must still own its socket");
+
+  pendingClient.end();
+  assert.deepEqual(await exitWithin(short, 5000), { code: 0, signal: null });
+});
+
+test("a directory serve cannot write, with no stale socket in it, ends serve with an error", async (t) => {
+  const dir = stateDir(t);
+  fs.chmodSync(dir, 0o500);
+  try {
+    const serve = startServeDirect(path.join(dir, "nowrite.sock"), FINGERPRINT, "echo-server", 60);
+    killOnCleanup(t, serve);
+    assert.deepEqual(await exitWithin(serve, 5000), { code: 1, signal: null });
+  } finally {
+    fs.chmodSync(dir, 0o700);
+  }
+});

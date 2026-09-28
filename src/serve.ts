@@ -105,7 +105,7 @@ export async function serve(
   }
 
   function cancelIdleCheck(): void {
-    if (idleTimer) clearTimeout(idleTimer);
+    clearTimeout(idleTimer ?? undefined);
     idleTimer = null;
   }
 
@@ -146,16 +146,13 @@ export async function serve(
   server.on("connection", (socket: Socket) => {
     pending += 1;
     cancelIdleCheck();
-    handleConnection(socket)
-      // Stryker disable next-line ArrowFunction: handleConnection settles
-      // every error path itself, so this catch never runs today. It stays
-      // so that a future throw drops one connection instead of crashing
-      // the resident.
-      .catch(() => socket.destroy())
-      .finally(() => {
-        pending -= 1;
-        scheduleIdleCheck();
-      });
+    // handleConnection settles every error path itself. There is no catch
+    // here on purpose: a throw would be a bug, and an unhandled rejection
+    // shows it, where dropping the one connection would hide it.
+    void handleConnection(socket).finally(() => {
+      pending -= 1;
+      scheduleIdleCheck();
+    });
   });
 
   async function handleConnection(socket: Socket): Promise<void> {
@@ -219,7 +216,7 @@ export async function serve(
 
     child.stdout!.on("data", (chunk: Buffer) => socket.write(chunk));
     child.stderr!.on("data", (chunk: Buffer) => process.stderr.write(chunk));
-    // Stryker disable next-line StringLiteral: a write that races the
+    // Stryker disable next-line StringLiteral,CallExpression: a write that races the
     // child's exit fails with EPIPE here. No test can place a write inside
     // that window on purpose; without this listener, it would crash serve.
     child.stdin!.on("error", () => {});
@@ -320,7 +317,7 @@ function bindListener(server: net.Server, sockPath: string): Promise<void> {
 
     server.on("error", onError);
     server.once("listening", () => {
-      // Stryker disable next-line StringLiteral: no test can make a
+      // Stryker disable next-line StringLiteral,CallExpression: no test can make a
       // listening server emit an error, so keeping onError attached after
       // this point has no effect a test can see.
       server.removeListener("error", onError);
