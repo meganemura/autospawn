@@ -71,6 +71,9 @@ export function takeRepeated(
 ): ParseResult<{ rest: readonly string[]; values: readonly string[] }> {
   const rest: string[] = [];
   const values: string[] = [];
+  // Stryker disable next-line EqualityOperator: one more pass, at i equal
+  // to the length, finds no flag and slices an empty pair, so <= ends the
+  // same way.
   for (let i = 0; i < args.length; i += 2) {
     const arg = args[i]!;
     const value = args[i + 1];
