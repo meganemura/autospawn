@@ -78,8 +78,8 @@ function requireEnv(name: string): never {
 // waits on those two shrink with it. It is not a user option; any value
 // that is not a positive integer leaves the real second.
 export function secondLength(env: NodeJS.ProcessEnv): number {
-  const raw = env.AUTOSPAWN_TEST_TIME_UNIT_MS;
-  const ms = raw === undefined ? NaN : Number(raw);
+  // Number(undefined) is NaN, so an unset variable fails the check below.
+  const ms = Number(env.AUTOSPAWN_TEST_TIME_UNIT_MS);
   return Number.isInteger(ms) && ms > 0 ? ms : 1000;
 }
 

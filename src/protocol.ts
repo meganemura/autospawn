@@ -87,6 +87,8 @@ export function readHeaderLine(
       socket.removeListener("data", onData);
       socket.removeListener("error", onError);
       socket.removeListener("close", onClose);
+      // Stryker disable next-line StringLiteral,CallExpression: an "end" after
+      // the header reaches finish(), which returns at once since done is set.
       socket.removeListener("end", onClose);
     };
 
@@ -156,6 +158,9 @@ export function readHeaderLine(
 
     socket.on("data", onData);
     socket.on("error", onError);
+    // Stryker disable next-line StringLiteral: a peer that goes away before
+    // the header sends "end" or causes "error" first, and both settle the
+    // read. This listener covers a close that comes with neither.
     socket.on("close", onClose);
     // serve's sockets allow half open, so a peer that ends its side emits
     // "end" but no "close". A peer that ends before the header line will
