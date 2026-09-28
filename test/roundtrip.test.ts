@@ -18,6 +18,7 @@ import {
   sleep,
   startServeDirect,
   waitFor,
+  waitForListening,
 } from "./helpers.ts";
 
 // The spawn-command every test in this file uses: a fake secrets wrapper
@@ -180,7 +181,7 @@ test("relay: arbitrary binary survives connect -> serve -> echo unchanged", asyn
   // One resident, shared across every draw below: each Hegel test case
   // only pays for a fresh `connect` subprocess, not a fresh spawn chain.
   const resident = startServeDirect(sockPath, fingerprintArgv(relayChain), "echo-server", 30);
-  await waitFor(() => fs.existsSync(sockPath), { timeoutMs: 5000 });
+  await waitForListening(sockPath);
   t.after(() => {
     if (!isDead(resident.pid!)) resident.kill("SIGTERM");
     removeStateDir(dir);

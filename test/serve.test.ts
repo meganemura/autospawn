@@ -20,6 +20,7 @@ import {
   sleep,
   startServeDirect,
   waitFor,
+  waitForListening,
 } from "./helpers.ts";
 
 const FINGERPRINT = "serve-test-fingerprint";
@@ -94,7 +95,7 @@ test("one connection closing does not start the idle timeout while another is op
   const sockPath = path.join(dir, "two.sock");
   const serve = startServeDirect(sockPath, FINGERPRINT, "echo-server", 1);
   killOnCleanup(t, serve);
-  await waitFor(() => fs.existsSync(sockPath), { timeoutMs: 5000 });
+  await waitForListening(sockPath);
 
   const first = await attachRaw(sockPath, FINGERPRINT);
   const second = await attachRaw(sockPath, FINGERPRINT);
@@ -114,7 +115,7 @@ test("a connection still sending its header holds off the idle timeout", async (
   const sockPath = path.join(dir, "slowheader.sock");
   const serve = startServeDirect(sockPath, FINGERPRINT, "echo-server", 1);
   killOnCleanup(t, serve);
-  await waitFor(() => fs.existsSync(sockPath), { timeoutMs: 5000 });
+  await waitForListening(sockPath);
 
   const sock = net.connect(sockPath);
   await new Promise<void>((resolve, reject) => {
@@ -136,7 +137,7 @@ test("stop with a client attached ends the child and the resident at once", asyn
   // A long idle timeout, so only stop can end it within the test.
   const serve = startServeDirect(sockPath, FINGERPRINT, "echo-server", 60);
   killOnCleanup(t, serve);
-  await waitFor(() => fs.existsSync(sockPath), { timeoutMs: 5000 });
+  await waitForListening(sockPath);
 
   const client = await attachRaw(sockPath, FINGERPRINT);
   const clientClosed = new Promise<void>((resolve) => client.once("close", () => resolve()));
@@ -158,13 +159,13 @@ test("a serve that loses its socket logs the loss once, however long it drains",
 
   const serveA = startServeDirect(sockPath, FINGERPRINT, "echo-server", 60, { stderrFd: logFd });
   killOnCleanup(t, serveA);
-  await waitFor(() => fs.existsSync(sockPath), { timeoutMs: 5000 });
+  await waitForListening(sockPath);
   const client = await attachRaw(sockPath, FINGERPRINT);
 
   fs.unlinkSync(sockPath);
   const serveB = startServeDirect(sockPath, FINGERPRINT, "echo-server", 60);
   killOnCleanup(t, serveB);
-  await waitFor(() => fs.existsSync(sockPath), { timeoutMs: 5000 });
+  await waitForListening(sockPath);
 
   // Several ownership checks run while the client keeps serveA draining.
   await sleep(3500);
@@ -214,7 +215,7 @@ async function startedServe(
   const sockPath = path.join(dir, `${name}.sock`);
   const serve = startServeDirect(sockPath, FINGERPRINT, server, 60, opts);
   killOnCleanup(t, serve);
-  await waitFor(() => fs.existsSync(sockPath), { timeoutMs: 5000 });
+  await waitForListening(sockPath);
   return { serve, sockPath, dir };
 }
 
@@ -322,7 +323,7 @@ test("a serve that lost its socket waits for its last child, not its first, befo
   fs.unlinkSync(sockPath);
   const serveB = startServeDirect(sockPath, FINGERPRINT, "echo-server", 60);
   killOnCleanup(t, serveB);
-  await waitFor(() => fs.existsSync(sockPath), { timeoutMs: 5000 });
+  await waitForListening(sockPath);
   await sleep(1500);
 
   first.end();
@@ -361,7 +362,7 @@ test("SIGTERM to a serve that lost its socket leaves the new resident's socket a
   fs.unlinkSync(sockPath);
   const serveB = startServeDirect(sockPath, FINGERPRINT, "echo-server", 60);
   killOnCleanup(t, serveB);
-  await waitFor(() => fs.existsSync(sockPath), { timeoutMs: 5000 });
+  await waitForListening(sockPath);
   const inodeB = fs.statSync(sockPath).ino;
   await sleep(1500);
   assert.equal(await exitWithin(serveA, 100), "still running");
@@ -395,6 +396,8 @@ test("a stale socket in a directory serve cannot write ends serve with an error"
     stdio: "ignore",
   });
   killOnCleanup(t, holder);
+  // This listener is not serve and never chmods its socket, so wait for
+  // the file itself.
   await waitFor(() => fs.existsSync(sockPath), { timeoutMs: 5000 });
   holder.kill("SIGKILL");
   await waitFor(() => isDead(holder.pid!), { timeoutMs: 5000 });
@@ -414,7 +417,7 @@ test("a child closing while another connection is still being set up does not st
   const sockPath = path.join(stateDir(t), "overlap.sock");
   const short = startServeDirect(sockPath, FINGERPRINT, "echo-server", 1);
   killOnCleanup(t, short);
-  await waitFor(() => fs.existsSync(sockPath), { timeoutMs: 5000 });
+  await waitForListening(sockPath);
 
   const pendingClient = await openRaw(sockPath);
   const attached = await attachRaw(sockPath, FINGERPRINT);

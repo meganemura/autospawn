@@ -197,6 +197,22 @@ export async function waitFor(
   }
 }
 
+// True once serve accepts connections on sockPath. The file alone is not
+// enough: bind creates it before listen, and a connect in between gets
+// ECONNREFUSED. serve chmods the socket to 0600 after listen, so that mode
+// marks a socket that is listening.
+export function isListening(sockPath: string): boolean {
+  try {
+    return (fs.statSync(sockPath).mode & 0o777) === 0o600;
+  } catch {
+    return false;
+  }
+}
+
+export function waitForListening(sockPath: string, timeoutMs = 5000): Promise<void> {
+  return waitFor(() => isListening(sockPath), { timeoutMs });
+}
+
 export function readCountFile(file: string): number {
   try {
     return fs.readFileSync(file, "utf8").length;

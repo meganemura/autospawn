@@ -14,7 +14,14 @@ import {
   MAX_HEADER_BYTES,
   readHeaderLine,
 } from "../src/protocol.ts";
-import { isDead, makeStateDir, removeStateDir, startServeDirect, waitFor } from "./helpers.ts";
+import {
+  isDead,
+  makeStateDir,
+  removeStateDir,
+  startServeDirect,
+  waitFor,
+  waitForListening,
+} from "./helpers.ts";
 
 test("header and payload sent in one write are both delivered", async (t) => {
   const dir = makeStateDir();
@@ -23,7 +30,7 @@ test("header and payload sent in one write are both delivered", async (t) => {
   t.after(() => removeStateDir(dir));
 
   const serveProc = startServeDirect(sockPath, fingerprint);
-  await waitFor(() => fs.existsSync(sockPath), { timeoutMs: 5000 });
+  await waitForListening(sockPath);
   t.after(() => {
     if (!isDead(serveProc.pid!)) serveProc.kill("SIGTERM");
   });

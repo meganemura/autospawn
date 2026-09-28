@@ -15,6 +15,8 @@ import {
   spawnConnect,
   startServeDirect,
   waitFor,
+  isListening,
+  waitForListening,
 } from "./helpers.ts";
 import { encodeLine } from "../src/protocol.ts";
 
@@ -61,7 +63,7 @@ test("killing connect mid-startup does not kill the resident chain", async (t) =
   await waitFor(() => fs.existsSync(pidFile), { timeoutMs: 5000 });
   connect.kill("SIGKILL");
 
-  await waitFor(() => fs.existsSync(sockPath), { timeoutMs: 5000 });
+  await waitForListening(sockPath);
   assert.equal(fs.readFileSync(countFile, "utf8").length, 1);
 
   const second = await runCli(["connect", "--name", "resilient12", "--", ...chainArgs()], {
@@ -102,7 +104,7 @@ test("pkill -P <connect pid> during startup does not reach the resident chain", 
   if (connect.pid) await pkillChildrenOf(connect.pid);
   connect.kill("SIGKILL");
 
-  await waitFor(() => fs.existsSync(sockPath), { timeoutMs: 5000 });
+  await waitForListening(sockPath);
   assert.equal(fs.readFileSync(countFile, "utf8").length, 1);
 });
 
@@ -123,7 +125,7 @@ test("a serve whose socket path is removed, with nothing in its place, exits 0",
   const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) =>
     serve.once("exit", (code, signal) => resolve({ code, signal })),
   );
-  await waitFor(() => fs.existsSync(sockPath), { timeoutMs: 5000 });
+  await waitForListening(sockPath);
 
   fs.unlinkSync(sockPath);
 
@@ -142,14 +144,14 @@ test("a serve that loses the ownership race steps aside without deleting the win
   t.after(() => removeStateDir(dir));
 
   const serveA = startServeDirect(sockPath, fingerprint);
-  await waitFor(() => fs.existsSync(sockPath), { timeoutMs: 5000 });
+  await waitForListening(sockPath);
   const inodeA = fs.statSync(sockPath).ino;
 
   // Simulate a lost race: another starter removes the path out from under
   // serveA, and a second resident binds the fresh file.
   fs.unlinkSync(sockPath);
   const serveB = startServeDirect(sockPath, fingerprint);
-  await waitFor(() => fs.existsSync(sockPath) && fs.statSync(sockPath).ino !== inodeA, {
+  await waitFor(() => isListening(sockPath) && fs.statSync(sockPath).ino !== inodeA, {
     timeoutMs: 5000,
   });
 
@@ -177,7 +179,7 @@ test("a serve with an active child still exits once it loses the ownership race"
   t.after(() => removeStateDir(dir));
 
   const serveA = startServeDirect(sockPath, fingerprint);
-  await waitFor(() => fs.existsSync(sockPath), { timeoutMs: 5000 });
+  await waitForListening(sockPath);
   const inodeA = fs.statSync(sockPath).ino;
 
   // Attach one live connection to serveA, so it has an active child
@@ -197,7 +199,7 @@ test("a serve with an active child still exits once it loses the ownership race"
 
   fs.unlinkSync(sockPath);
   const serveB = startServeDirect(sockPath, fingerprint);
-  await waitFor(() => fs.existsSync(sockPath) && fs.statSync(sockPath).ino !== inodeA, {
+  await waitFor(() => isListening(sockPath) && fs.statSync(sockPath).ino !== inodeA, {
     timeoutMs: 5000,
   });
 
