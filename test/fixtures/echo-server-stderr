@@ -1,0 +1,4 @@
+#!/bin/sh
+# Writes one line to stderr, then relays stdin to stdout like echo-server.
+printf 'stderr from the server child\n' >&2
+exec cat

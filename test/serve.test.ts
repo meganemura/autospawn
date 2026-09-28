@@ -178,3 +178,155 @@ test("a serve that loses its socket logs the loss once, however long it drains",
   assert.deepEqual(await exitWithin(serveA, 5000), { code: 0, signal: null });
   assert.equal(fs.existsSync(sockPath), true, "serveA must leave serveB's socket in place");
 });
+
+// Raw socket helpers for the header tests below: they talk to serve
+// without the attach helper, so a test can send a header serve refuses.
+async function openRaw(sockPath: string): Promise<net.Socket> {
+  const sock = net.connect(sockPath);
+  await new Promise<void>((resolve, reject) => {
+    sock.once("connect", resolve);
+    sock.once("error", reject);
+  });
+  return sock;
+}
+
+// Collects everything the socket sends until it closes, or until
+// timeoutMs passes.
+function readUntilClose(sock: net.Socket, timeoutMs: number): Promise<string | "still open"> {
+  return new Promise((resolve) => {
+    let buf = "";
+    const timer = setTimeout(() => resolve("still open"), timeoutMs);
+    sock.on("data", (chunk: Buffer) => (buf += chunk.toString("utf8")));
+    sock.once("close", () => {
+      clearTimeout(timer);
+      resolve(buf);
+    });
+  });
+}
+
+async function startedServe(
+  t: TestContext,
+  name: string,
+  server = "echo-server",
+  opts: { stderrFd?: number; env?: NodeJS.ProcessEnv } = {},
+): Promise<{ serve: ChildProcess; sockPath: string; dir: string }> {
+  const dir = stateDir(t);
+  const sockPath = path.join(dir, `${name}.sock`);
+  const serve = startServeDirect(sockPath, FINGERPRINT, server, 60, opts);
+  killOnCleanup(t, serve);
+  await waitFor(() => fs.existsSync(sockPath), { timeoutMs: 5000 });
+  return { serve, sockPath, dir };
+}
+
+test("a header that is not JSON gets its connection closed without a reply", async (t) => {
+  const { sockPath } = await startedServe(t, "notjson");
+  const sock = await openRaw(sockPath);
+  sock.write("not json\n");
+  assert.equal(await readUntilClose(sock, 3000), "");
+});
+
+test("JSON that is neither attach nor stop gets a bad_header reply, then a close", async (t) => {
+  const { sockPath } = await startedServe(t, "badheader");
+  const sock = await openRaw(sockPath);
+  sock.write(JSON.stringify({ v: 1, op: "hello" }) + "\n");
+  assert.equal(
+    await readUntilClose(sock, 3000),
+    '{"ok":false,"error":"bad_header","message":"expected attach or stop"}\n',
+  );
+});
+
+test("an attach with another fingerprint gets a fingerprint_mismatch reply, then a close", async (t) => {
+  const { sockPath } = await startedServe(t, "mismatch");
+  const sock = await openRaw(sockPath);
+  sock.write(JSON.stringify({ v: 1, op: "attach", fingerprint: "other" }) + "\n");
+  assert.equal(
+    await readUntilClose(sock, 3000),
+    '{"ok":false,"error":"fingerprint_mismatch","message":"spawn command does not match"}\n',
+  );
+});
+
+test("a server command that cannot start is logged, and its connection closes", async (t) => {
+  const dir = stateDir(t);
+  const logPath = path.join(dir, "missing-serve.log");
+  const logFd = fs.openSync(logPath, "a");
+  t.after(() => fs.closeSync(logFd));
+  const { sockPath } = await startedServe(t, "missing", "no-such-server", { stderrFd: logFd });
+
+  const client = await attachRaw(sockPath, FINGERPRINT);
+  assert.notEqual(await readUntilClose(client, 3000), "still open");
+  await waitFor(() => /\[serve\] server-command error: .*ENOENT/.test(fs.readFileSync(logPath, "utf8")), {
+    timeoutMs: 3000,
+  });
+});
+
+test("the server child's stderr reaches serve's log", async (t) => {
+  const dir = stateDir(t);
+  const logPath = path.join(dir, "childerr-serve.log");
+  const logFd = fs.openSync(logPath, "a");
+  t.after(() => fs.closeSync(logFd));
+  const { sockPath } = await startedServe(t, "childerr", "echo-server-stderr", { stderrFd: logFd });
+
+  const client = await attachRaw(sockPath, FINGERPRINT);
+  await waitFor(() => fs.readFileSync(logPath, "utf8").includes("stderr from the server child"), {
+    timeoutMs: 3000,
+  });
+  client.end();
+});
+
+// Writes that reach a child which already exited fail with EPIPE on its
+// stdin. serve must absorb that, and keep serving.
+test("a client that keeps writing to a child that exited does not bring serve down", async (t) => {
+  const { serve, sockPath } = await startedServe(t, "epipe", "exit1");
+  const client = await attachRaw(sockPath, FINGERPRINT);
+  client.on("error", () => {});
+  const payload = Buffer.alloc(64 * 1024, 0x61);
+  for (let i = 0; i < 20; i += 1) {
+    if (client.destroyed) break;
+    client.write(payload);
+    await sleep(20);
+  }
+  assert.equal(await exitWithin(serve, 1000), "still running");
+  const second = await attachRaw(sockPath, FINGERPRINT);
+  second.destroy();
+});
+
+test("a client that disconnects gets its child stopped once the child writes, even if it ignores stdin", async (t) => {
+  const dir = stateDir(t);
+  const pidFile = path.join(dir, "child.pid");
+  const { serve, sockPath } = await startedServe(t, "ticker", "pid-ticker", {
+    env: { TEST_PIDFILE: pidFile },
+  });
+
+  const client = await attachRaw(sockPath, FINGERPRINT);
+  await waitFor(() => fs.existsSync(pidFile) && fs.readFileSync(pidFile, "utf8").trim() !== "", {
+    timeoutMs: 3000,
+  });
+  const childPid = Number(fs.readFileSync(pidFile, "utf8").trim());
+  t.after(() => {
+    if (!isDead(childPid)) process.kill(childPid, "SIGKILL");
+  });
+
+  client.destroy();
+  await waitFor(() => isDead(childPid), { timeoutMs: 3000 });
+  // The failed write must not take serve down with it. If serve crashed,
+  // the child would die too, from SIGPIPE, so its death alone proves
+  // nothing about serve.
+  assert.equal(await exitWithin(serve, 1000), "still running");
+});
+
+test("a serve that lost its socket waits for its last child, not its first, before it exits", async (t) => {
+  const { serve, sockPath } = await startedServe(t, "twochildren");
+  const first = await attachRaw(sockPath, FINGERPRINT);
+  const second = await attachRaw(sockPath, FINGERPRINT);
+
+  fs.unlinkSync(sockPath);
+  const serveB = startServeDirect(sockPath, FINGERPRINT, "echo-server", 60);
+  killOnCleanup(t, serveB);
+  await waitFor(() => fs.existsSync(sockPath), { timeoutMs: 5000 });
+  await sleep(1500);
+
+  first.end();
+  assert.equal(await exitWithin(serve, 1500), "still running");
+  second.end();
+  assert.deepEqual(await exitWithin(serve, 5000), { code: 0, signal: null });
+});

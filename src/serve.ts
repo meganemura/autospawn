@@ -167,6 +167,9 @@ export async function serve(
 
     if (isStopHeader(header)) {
       await writeLine(socket, { ok: true });
+      // Stryker disable next-line CallExpression: without this end, the
+      // connection still closes within a second: close() below removes the
+      // socket file, and the ownership check then exits the process.
       socket.end();
       await shutdownOwned();
       return;
@@ -194,32 +197,33 @@ export async function serve(
 
   function spawnChild(socket: Socket): void {
     const [cmd, ...args] = serverCommand;
-    let child: ChildProcess;
-    try {
-      child = spawn(cmd!, args, {
-        stdio: ["pipe", "pipe", "pipe"],
-        env: childEnv(),
-      });
-    } catch (err) {
-      logLine(`failed to spawn server-command: ${(err as Error).message}`);
-      socket.destroy();
-      return;
-    }
+    // stdio defaults to three pipes. A command that cannot start reports it
+    // through the "error" event below, not a throw; spawn throws only for
+    // arguments argv cannot carry, such as a NUL byte, and the catch around
+    // handleConnection covers that.
+    const child = spawn(cmd!, args, { env: childEnv() });
     children.add(child);
 
-    child.on("error", (err) => {
-      logLine(`server-command error: ${err.message}`);
-      socket.destroy();
-    });
+    // A command that cannot start emits "error" and then "close"; the close
+    // handler below ends the socket.
+    child.on("error", (err) => logLine(`server-command error: ${err.message}`));
 
     child.stdout!.on("data", (chunk: Buffer) => socket.write(chunk));
     child.stderr!.on("data", (chunk: Buffer) => process.stderr.write(chunk));
+    // Stryker disable next-line StringLiteral: a write that races the
+    // child's exit fails with EPIPE here. No test can place a write inside
+    // that window on purpose; without this listener, it would crash serve.
     child.stdin!.on("error", () => {});
 
     socket.on("data", (chunk: Buffer) => child.stdin!.write(chunk));
     socket.on("end", () => child.stdin!.end());
+    // The socket stays half open after the client ends its side, so a child
+    // can still answer input it already got. It closes once the child exits
+    // (below), or once a write to a client that went away fails: a socket
+    // always emits "close" after "error", so the error listener only keeps
+    // that failure from crashing the resident.
     socket.on("close", () => child.kill("SIGTERM"));
-    socket.on("error", () => child.kill("SIGTERM"));
+    socket.on("error", () => {});
 
     child.on("close", () => {
       children.delete(child);

@@ -103,13 +103,14 @@ export function spawnConnect(args: string[], env: NodeJS.ProcessEnv): ChildProce
 //
 // idleTimeoutSeconds null starts serve with no --idle-timeout; a caller that
 // does so must kill it in its own cleanup. stderrFd, when given, receives
-// serve's own log lines.
+// serve's own log lines. env adds variables that serve passes on to its
+// children; a name starting with AUTOSPAWN_ would be stripped.
 export function startServeDirect(
   sockPath: string,
   fingerprint: string,
   server = "echo-server",
   idleTimeoutSeconds: number | null = 10,
-  { stderrFd }: { stderrFd?: number } = {},
+  { stderrFd, env }: { stderrFd?: number; env?: NodeJS.ProcessEnv } = {},
 ): ChildProcess {
   const idleArgs = idleTimeoutSeconds === null ? [] : ["--idle-timeout", String(idleTimeoutSeconds)];
   return spawn(
@@ -118,6 +119,7 @@ export function startServeDirect(
     {
       env: {
         ...process.env,
+        ...env,
         AUTOSPAWN_SOCKET: sockPath,
         AUTOSPAWN_FINGERPRINT: fingerprint,
       },

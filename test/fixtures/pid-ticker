@@ -1,0 +1,11 @@
+#!/bin/sh
+# Writes its pid to $TEST_PIDFILE, then prints a line every 0.1 seconds
+# without reading stdin, so stdin closing does not end it. The loop is
+# bounded, so a test that fails to stop it does not leave it running long.
+printf '%s\n' "$$" > "$TEST_PIDFILE"
+i=0
+while [ "$i" -lt 300 ]; do
+  printf 'tick\n'
+  sleep 0.1
+  i=$((i + 1))
+done
