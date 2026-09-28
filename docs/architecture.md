@@ -56,7 +56,7 @@ Right after a client's `connect` opens the socket, it sends one line of
 JSON, then falls silent until `serve` answers with one line of its own:
 
 ```
-connect -> serve: {"v":1,"op":"attach","fingerprint":"<sha256 of argv>"}\n
+connect -> serve: {"v":1,"op":"attach","fingerprint":"<sha256 of argv>","params":{...}}\n
 serve   -> connect: {"ok":true}\n                                  (or {"ok":false,"error":"...","message":"..."})
 ```
 
@@ -64,7 +64,10 @@ serve   -> connect: {"ok":true}\n                                  (or {"ok":fal
 header that never arrives, is not valid JSON, or is too large gets its
 connection closed without a reply. Valid JSON that is neither attach nor
 stop gets a `bad_header` reply, and an attach with the wrong fingerprint
-gets a `fingerprint_mismatch` reply, before the connection closes.
+gets a `fingerprint_mismatch` reply, before the connection closes. An
+attach leaves out `params` when connect got no `--param`. A key that serve
+did not declare, or a value with a control character or over 4096 bytes,
+gets a `bad_param` reply (see ADR 0008).
 
 Bytes that arrive after that first `\n` in the same read are put back on
 the socket before either side treats the connection as a plain byte

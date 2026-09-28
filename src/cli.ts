@@ -9,8 +9,9 @@
 // spawn-chain.ts.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { parseFlags, parsePositiveInt, splitOnDoubleDash, type ParseResult } from "./args.ts";
+import { parseFlags, parsePositiveInt, splitOnDoubleDash, takeRepeated, type ParseResult } from "./args.ts";
 import { connect } from "./connect.ts";
+import { parseConnectParams, parseServeParams } from "./params.ts";
 import { validateName } from "./paths.ts";
 import { serve } from "./serve.ts";
 import { runSpawnChain } from "./spawn-chain.ts";
@@ -19,8 +20,8 @@ import { stop } from "./stop.ts";
 const USAGE = `usage: autospawn <command> [options]
 
 commands:
-  connect --name <name> [--timeout <seconds>] -- <spawn-command...>
-  serve [--idle-timeout <seconds>] -- <server-command...>
+  connect --name <name> [--timeout <seconds>] [--param <key>=<value>]... -- <spawn-command...>
+  serve [--idle-timeout <seconds>] [--param <key>=<ENV_NAME>]... -- <server-command...>
   stop --name <name>
 
   -h, --help     show this message
@@ -61,8 +62,10 @@ async function main(argv: string[]): Promise<void> {
 
   if (command === "connect") {
     const { before, after } = orUsageError(splitOnDoubleDash(rest));
+    const taken = orUsageError(takeRepeated(before, "--param"));
+    const params = orUsageError(parseConnectParams(taken.values));
     const flags = orUsageError(
-      parseFlags(before, { "--name": "string", "--timeout": "string" }),
+      parseFlags(taken.rest, { "--name": "string", "--timeout": "string" }),
     );
     const name = flags["--name"];
     if (!name) usageError("connect requires --name <name>");
@@ -70,17 +73,19 @@ async function main(argv: string[]): Promise<void> {
     const timeout = flags["--timeout"]
       ? orUsageError(parsePositiveInt(flags["--timeout"], "--timeout"))
       : undefined;
-    await connect(name, timeout, after);
+    await connect(name, timeout, after, params);
     return;
   }
 
   if (command === "serve") {
     const { before, after } = orUsageError(splitOnDoubleDash(rest));
-    const flags = orUsageError(parseFlags(before, { "--idle-timeout": "string" }));
+    const taken = orUsageError(takeRepeated(before, "--param"));
+    const declared = orUsageError(parseServeParams(taken.values, process.env));
+    const flags = orUsageError(parseFlags(taken.rest, { "--idle-timeout": "string" }));
     const idleTimeout = flags["--idle-timeout"]
       ? orUsageError(parsePositiveInt(flags["--idle-timeout"], "--idle-timeout"))
       : null;
-    await serve(idleTimeout, after);
+    await serve(idleTimeout, after, declared);
     return;
   }
 

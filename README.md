@@ -148,27 +148,61 @@ resident after an hour with no connections.
 
 ## Commands
 
-### `autospawn connect --name <name> [--timeout <seconds>] -- <command...>`
+### `autospawn connect --name <name> [--timeout <seconds>] [--param <key>=<value>]... -- <command...>`
 
 Attaches to the resident named `<name>`, starting it from `<command...>` if
 none answers yet. Relays stdin to the resident and the resident's output to
 stdout, byte for byte; all diagnostics go to stderr. `--timeout` (default
 120 seconds) bounds how long connect waits for a freshly started resident
 to come up — long enough for a person to approve a 1Password prompt.
+`--param` sends a value for this connection only; see "Per-connection
+values" below.
 
-### `autospawn serve [--idle-timeout <seconds>] -- <command...>`
+### `autospawn serve [--idle-timeout <seconds>] [--param <key>=<ENV_NAME>]... -- <command...>`
 
 Listens on the resident's socket and starts `<command...>` as a fresh child
 for every connection it accepts. Only `connect` starts `serve`; running it
 directly fails, since it needs environment variables that `connect` sets.
 With `--idle-timeout`, serve exits once it has had no running children,
 and no connection being set up, for that many seconds. Without it, serve
-runs until stopped.
+runs until stopped. `--param` declares a key that connections may send,
+and the environment variable it sets in that connection's child.
 
 ### `autospawn stop --name <name>`
 
 Asks the resident named `<name>` to shut down. Exits 0 if it stopped a
 resident or found none running, and 1 on an error.
+
+## Per-connection values
+
+Some programs need a value that changes on every call, while the secret
+stays the same, such as a topic to watch. Put it in `--param` on
+`connect`, not after `--`: everything after `--` is part of the
+fingerprint, so a value there would need a resident of its own.
+
+```sh
+autospawn connect --name example-events --param topic=proj-a -- \
+  op run -- \
+  autospawn serve --param topic=EXAMPLE_TOPIC -- \
+  example-tool watch
+```
+
+`serve --param topic=EXAMPLE_TOPIC` declares the key `topic`, and gives
+its value to the child as `EXAMPLE_TOPIC`. Each connection gets its own
+child with its own value, and all of them share the one resident, and the
+one approval. A value never reaches the child's command line, so a caller
+cannot add an option such as `-e` to it.
+
+serve refuses:
+
+- a key it did not declare, with a `bad_param` reply;
+- a value with a control character, or longer than 4096 bytes;
+- at startup, a declared name that its own environment already holds, or
+  that starts with `AUTOSPAWN_`, since a caller could otherwise replace a
+  value the config set, such as the URL the program sends its
+  credentials to.
+
+The program still has to treat a value as untrusted input.
 
 ## Files
 
@@ -206,7 +240,8 @@ Any process running as your user that can reach `<base>/<name>.sock` can
 attach to the resident. The resident then starts its configured program
 for that process, in an environment that holds the secrets a wrapper like
 `op run` resolved. The caller cannot change the program or its arguments,
-but it can use the program in the same way you do. The base directory's
+but it can use the program in the same way you do, and it can choose the
+values of the parameters that `serve` declares. The base directory's
 permission check keeps other users out; it does not distinguish between
 your own processes.
 

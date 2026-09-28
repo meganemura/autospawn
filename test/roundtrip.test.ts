@@ -203,3 +203,92 @@ test("relay: arbitrary binary survives connect -> serve -> echo unchanged", asyn
     { testCases: 20 },
   );
 });
+
+// --param end to end: one resident, one wrapper run, and each connection's
+// child sees the value its own connect sent.
+function paramChainArgs(): string[] {
+  return [
+    path.join(fixturesDir, "fake-wrapper"),
+    process.execPath,
+    cliPath,
+    "serve",
+    "--idle-timeout",
+    "10",
+    "--param",
+    "topic=PROBE_TOPIC",
+    "--",
+    path.join(fixturesDir, "echo-server-paramprobe"),
+  ];
+}
+
+test("--param: two connects with different values share one resident, and each child sees its own", async (t) => {
+  const dir = makeStateDir();
+  const countFile = path.join(dir, "count");
+  const env = { ...baseEnv(dir), FAKE_WRAPPER_COUNT_FILE: countFile };
+  t.after(async () => {
+    await runCli(["stop", "--name", "params"], { env });
+    removeStateDir(dir);
+  });
+
+  const connectWith = (topic: string) =>
+    runCli(["connect", "--name", "params", "--param", `topic=${topic}`, "--", ...paramChainArgs()], {
+      env,
+      input: "hi\n",
+    });
+
+  const first = await connectWith("proj-a");
+  assert.equal(first.code, 0, first.stderr);
+  assert.equal(first.stdout, "topic:proj-a\nhi\n");
+
+  const second = await connectWith("proj-b");
+  assert.equal(second.code, 0, second.stderr);
+  assert.equal(second.stdout, "topic:proj-b\nhi\n");
+
+  const none = await runCli(["connect", "--name", "params", "--", ...paramChainArgs()], {
+    env,
+    input: "hi\n",
+  });
+  assert.equal(none.stdout, "topic:unset\nhi\n");
+
+  assert.equal(fs.readFileSync(countFile, "utf8").length, 1, "wrapper should run exactly once");
+});
+
+test("--param: a key the resident did not declare is refused with bad_param", async (t) => {
+  const dir = makeStateDir();
+  const env = baseEnv(dir);
+  t.after(async () => {
+    await runCli(["stop", "--name", "undeclared"], { env });
+    removeStateDir(dir);
+  });
+
+  const result = await runCli(
+    ["connect", "--name", "undeclared", "--param", "other=x", "--", ...paramChainArgs()],
+    { env, input: "hi\n" },
+  );
+  assert.equal(result.code, 1);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /bad_param: parameter 'other' is not declared/);
+});
+
+test("--param: connect refuses a malformed value before it contacts anything", async (t) => {
+  const dir = makeStateDir();
+  const env = baseEnv(dir);
+  t.after(() => removeStateDir(dir));
+
+  const result = await runCli(
+    ["connect", "--name", "badvalue", "--param", "topic=a\u0001b", "--", ...paramChainArgs()],
+    { env, input: "" },
+  );
+  assert.equal(result.code, 2);
+  assert.match(result.stderr, /control character/);
+  assert.equal(fs.existsSync(path.join(dir, "badvalue.sock")), false);
+});
+
+test("--param: serve refuses to declare a variable its environment already holds", async () => {
+  const result = await runCli(
+    ["serve", "--param", "home=HOME", "--", path.join(fixturesDir, "echo-server")],
+    { env: { ...process.env, AUTOSPAWN_SOCKET: "/nonexistent/x.sock", AUTOSPAWN_FINGERPRINT: "f" } },
+  );
+  assert.equal(result.code, 2);
+  assert.match(result.stderr, /would replace HOME, which is already set/);
+});

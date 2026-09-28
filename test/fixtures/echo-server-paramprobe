@@ -1,0 +1,5 @@
+#!/bin/sh
+# Prints the per-connection parameter it received as its first line of
+# output, then relays stdin to stdout like echo-server.
+printf 'topic:%s\n' "${PROBE_TOPIC:-unset}"
+exec cat

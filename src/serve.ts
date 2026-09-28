@@ -13,6 +13,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import net, { type Socket } from "node:net";
 import path from "node:path";
+import { childParamEnv, type Params } from "./params.ts";
 import { ensureBaseDir } from "./paths.ts";
 import {
   encodeLine,
@@ -73,6 +74,7 @@ function requireEnv(name: string): never {
 export async function serve(
   idleTimeoutSeconds: number | null,
   serverCommand: readonly string[],
+  declaredParams: Params = {},
 ): Promise<never> {
   const sockPath: string = process.env.AUTOSPAWN_SOCKET ?? requireEnv("AUTOSPAWN_SOCKET");
   const fingerprint: string =
@@ -187,21 +189,28 @@ export async function serve(
       return;
     }
 
+    const paramEnv = childParamEnv(header.params ?? {}, declaredParams);
+    if (!paramEnv.ok) {
+      await writeLine(socket, errReply("bad_param", paramEnv.error));
+      socket.destroy();
+      return;
+    }
+
     await writeLine(socket, { ok: true });
-    spawnChild(socket);
+    spawnChild(socket, paramEnv.value);
     // readHeaderLine paused the socket once it found the header line;
     // spawnChild has now attached the relay listeners, so it is safe to
     // let bytes flow again.
     socket.resume();
   }
 
-  function spawnChild(socket: Socket): void {
+  function spawnChild(socket: Socket, paramEnv: Readonly<Record<string, string>>): void {
     const [cmd, ...args] = serverCommand;
     // stdio defaults to three pipes. A command that cannot start reports it
     // through the "error" event below, not a throw; spawn throws only for
     // arguments argv cannot carry, such as a NUL byte, and the catch around
     // handleConnection covers that.
-    const child = spawn(cmd!, args, { env: childEnv() });
+    const child = spawn(cmd!, args, { env: { ...childEnv(), ...paramEnv } });
     children.add(child);
 
     // A command that cannot start emits "error" and then "close"; the close

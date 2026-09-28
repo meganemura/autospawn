@@ -60,6 +60,31 @@ export function parseFlags(
   return ok(out);
 }
 
+// Takes every `flag value` pair out of a flat list of `--flag value` pairs,
+// for a flag that may repeat, and returns the values in order with the
+// other pairs left for parseFlags. It walks pairs the same way parseFlags
+// does, so a value that happens to equal the flag (`--name --param`) stays
+// a value.
+export function takeRepeated(
+  args: readonly string[],
+  flag: string,
+): ParseResult<{ rest: readonly string[]; values: readonly string[] }> {
+  const rest: string[] = [];
+  const values: string[] = [];
+  for (let i = 0; i < args.length; i += 2) {
+    const arg = args[i]!;
+    const value = args[i + 1];
+    if (arg === flag) {
+      if (value === undefined) return err(`option '${flag}' needs a value`);
+      values.push(value);
+    } else {
+      rest.push(arg);
+      if (value !== undefined) rest.push(value);
+    }
+  }
+  return ok({ rest, values });
+}
+
 // A positive integer, written with no sign, no leading zero beyond a
 // single "0" (which itself is rejected, being not positive), and no other
 // non-digit characters. Round-tripping through parseInt and back to a

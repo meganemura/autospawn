@@ -2,6 +2,10 @@
 
 ## (unreleased)
 
+- `connect --param key=value` sends a value for one connection, and
+  `serve --param key=ENV_NAME` declares which keys it accepts and the
+  variable each one sets in the child. Connections with different values
+  share one resident. See ADR 0008.
 - Accepting a connection now cancels the idle timer. A client that
   connected just before the timeout used to get its child, but the
   resident then exited, and the next client had to start a new one.

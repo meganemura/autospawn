@@ -11,6 +11,7 @@ import fs from "node:fs";
 import net, { type Socket } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { Params } from "./params.ts";
 import { baseDir, ensureBaseDir, logPath, socketPath, spawnLockPath } from "./paths.ts";
 import {
   encodeLine,
@@ -199,9 +200,16 @@ export async function startChain(
   return pid;
 }
 
-export async function attachAndRelay(sock: Socket, fingerprint: string): Promise<never> {
+export async function attachAndRelay(
+  sock: Socket,
+  fingerprint: string,
+  params: Params = {},
+): Promise<never> {
+  const header = Object.keys(params).length > 0
+    ? { v: 1, op: "attach", fingerprint, params }
+    : { v: 1, op: "attach", fingerprint };
   await new Promise<void>((resolve, reject) => {
-    sock.write(encodeLine({ v: 1, op: "attach", fingerprint }), (err) =>
+    sock.write(encodeLine(header), (err) =>
       err ? reject(err) : resolve(),
     );
   });
@@ -244,6 +252,7 @@ export async function connect(
   name: string,
   timeoutSeconds: number = DEFAULT_TIMEOUT_SECONDS,
   spawnCommand: readonly string[],
+  params: Params = {},
 ): Promise<never> {
   const base = baseDir();
   ensureBaseDir(base);
@@ -253,7 +262,7 @@ export async function connect(
   const fingerprint = fingerprintArgv(spawnCommand);
 
   const existing = await tryConnect(sockPath);
-  if (existing) return attachAndRelay(existing, fingerprint);
+  if (existing) return attachAndRelay(existing, fingerprint, params);
 
   const deadline = Date.now() + timeoutSeconds * 1000;
   const role = acquireOrWaitForLock(lockPath, timeoutSeconds * 1000);
@@ -264,7 +273,7 @@ export async function connect(
     // There is no pid to watch here, so the deadline is the only way out.
     for (;;) {
       const sock = await tryConnect(sockPath);
-      if (sock) return attachAndRelay(sock, fingerprint);
+      if (sock) return attachAndRelay(sock, fingerprint, params);
       // Stryker disable next-line EqualityOperator: differs from > only at
       // the exact millisecond deadline falls on, and this loop only checks
       // the clock once per POLL_INTERVAL_MS (100ms) tick -- landing on
@@ -289,7 +298,7 @@ export async function connect(
     const sock = await tryConnect(sockPath);
     if (sock) {
       releaseLock(lockPath);
-      return attachAndRelay(sock, fingerprint);
+      return attachAndRelay(sock, fingerprint, params);
     }
 
     if (deadPidGraceDeadline === null) {

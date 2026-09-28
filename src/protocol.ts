@@ -13,7 +13,14 @@ import type { Socket } from "node:net";
 export const MAX_HEADER_BYTES = 64 * 1024;
 export const HEADER_TIMEOUT_MS = 5000;
 
-export type AttachHeader = { v: 1; op: "attach"; fingerprint: string };
+// params carries per-connection values (ADR 0008). A connect with no
+// --param leaves it out.
+export type AttachHeader = {
+  v: 1;
+  op: "attach";
+  fingerprint: string;
+  params?: Readonly<Record<string, string>>;
+};
 export type StopHeader = { v: 1; op: "stop" };
 export type ClientHeader = AttachHeader | StopHeader;
 
@@ -154,8 +161,15 @@ export function isAttachHeader(v: unknown): v is AttachHeader {
     v !== null &&
     (v as { v?: unknown }).v === 1 &&
     (v as { op?: unknown }).op === "attach" &&
-    typeof (v as { fingerprint?: unknown }).fingerprint === "string"
+    typeof (v as { fingerprint?: unknown }).fingerprint === "string" &&
+    isParams((v as { params?: unknown }).params)
   );
+}
+
+function isParams(p: unknown): boolean {
+  if (p === undefined) return true;
+  if (typeof p !== "object" || p === null || Array.isArray(p)) return false;
+  return Object.values(p).every((value) => typeof value === "string");
 }
 
 export function isStopHeader(v: unknown): v is StopHeader {
