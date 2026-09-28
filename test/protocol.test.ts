@@ -446,3 +446,30 @@ test("isAttachHeader / isStopHeader: named malformed-shape examples", () => {
     assert.equal(isStopHeader(bad), expectStop, JSON.stringify(bad));
   }
 });
+
+// serve's sockets allow half open, so a peer that ends its side before the
+// header emits "end" but no "close". readHeaderLine must treat that as a
+// close at once, not wait for its timeout.
+test("readHeaderLine: a half-open peer that ends before the header rejects at once", async (t) => {
+  const dir = makeStateDir();
+  t.after(() => removeStateDir(dir));
+  const sockPath = path.join(dir, "halfopen.sock");
+  const srv = net.createServer({ allowHalfOpen: true });
+  await new Promise<void>((resolve) => srv.listen(sockPath, resolve));
+  const accepted = new Promise<Socket>((resolve) => srv.once("connection", resolve));
+  const client = net.connect(sockPath);
+  const server = await accepted;
+  t.after(() => {
+    client.destroy();
+    server.destroy();
+    srv.close();
+  });
+
+  const started = Date.now();
+  const readPromise = readHeaderLine(server, { timeoutMs: 5000 });
+  client.end();
+  const err = await readPromise.catch((e: unknown) => e as HeaderError);
+  assert.ok(err instanceof HeaderError);
+  assert.equal(err.code, "header_closed");
+  assert.ok(Date.now() - started < 2000, "must not wait for the 5s timeout");
+});

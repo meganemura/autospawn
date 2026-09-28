@@ -2,6 +2,8 @@
 
 ## (unreleased)
 
+- serve closes a connection that ends its side before sending a header at
+  once. It used to wait out the 5-second header timeout.
 - connect exits with the program's exit code, 128 plus a signal's number,
   or 127 for a command that cannot start. serve frames the program's
   output so the status can follow it, when both sides support it. See

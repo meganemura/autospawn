@@ -87,6 +87,7 @@ export function readHeaderLine(
       socket.removeListener("data", onData);
       socket.removeListener("error", onError);
       socket.removeListener("close", onClose);
+      socket.removeListener("end", onClose);
     };
 
     // Only failures settle through here. The success path in onData
@@ -156,6 +157,10 @@ export function readHeaderLine(
     socket.on("data", onData);
     socket.on("error", onError);
     socket.on("close", onClose);
+    // serve's sockets allow half open, so a peer that ends its side emits
+    // "end" but no "close". A peer that ends before the header line will
+    // never send one, so that counts as a close, not a wait for the timeout.
+    socket.on("end", onClose);
   });
 }
 
