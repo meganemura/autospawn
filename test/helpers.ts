@@ -46,6 +46,16 @@ export function removeStateDir(dir: string): void {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
+// A default state directory for every process a test starts without its
+// own AUTOSPAWN_DIR. Without it, a test that expects a usage error falls
+// back to the real ~/.local/state/autospawn, and a mutant that breaks the
+// check lets connect run there for real: mutation runs left log files in
+// that directory, and a name that matched a real resident would have
+// reached it. A test that sets AUTOSPAWN_DIR itself still wins.
+const defaultStateDir = makeStateDir();
+process.env.AUTOSPAWN_DIR = defaultStateDir;
+process.on("exit", () => removeStateDir(defaultStateDir));
+
 export type RunResult = { code: number | null; stdout: string; stderr: string };
 
 export function runCli(

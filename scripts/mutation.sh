@@ -37,5 +37,8 @@ code=$?
 pkill -TERM -f "$PWD/.stryker-tmp/sandbox-" 2>/dev/null
 sleep 2
 pkill -KILL -f "$PWD/.stryker-tmp/sandbox-" 2>/dev/null
+# A test that a mutant stopped partway can leave a directory it made
+# read-only, and rm -rf cannot remove what is inside it.
+chmod -R u+w "$dir" 2>/dev/null
 rm -rf "$dir"
 exit "$code"
