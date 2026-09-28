@@ -441,3 +441,13 @@ test("a directory serve cannot write, with no stale socket in it, ends serve wit
     fs.chmodSync(dir, 0o700);
   }
 });
+
+test("an attach with an undeclared parameter gets a bad_param reply, then a close", async (t) => {
+  const { sockPath } = await startedServe(t, "undeclaredparam");
+  const sock = await openRaw(sockPath);
+  sock.write(JSON.stringify({ v: 1, op: "attach", fingerprint: FINGERPRINT, params: { topic: "x" } }) + "\n");
+  assert.equal(
+    await readUntilClose(sock, 3000),
+    '{"ok":false,"error":"bad_param","message":"parameter \'topic\' is not declared"}\n',
+  );
+});
