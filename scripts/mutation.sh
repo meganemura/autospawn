@@ -13,7 +13,16 @@
 #    and such a resident outlives the run: its parent is launchd, so no
 #    test cleanup reaches it.
 #
-# Extra arguments go to `stryker run`, for example `--mutate src/stop.ts`.
+# `--tests "<files>"`, first if given, limits each mutant's run to those
+# test files (stryker.config.json passes AUTOSPAWN_MUTATION_TESTS to
+# node --test). Without it, every mutant runs the whole suite. Other
+# arguments go to `stryker run`, for example `--mutate src/stop.ts`.
+
+tests=""
+if [ "$1" = "--tests" ]; then
+  tests=$2
+  shift 2
+fi
 
 margin=400
 limit=$(( $(ps -U "$(id -u)" | wc -l) + margin ))
@@ -21,7 +30,7 @@ dir=$(mktemp -d /tmp/mas-run.XXXXXX) || exit 1
 
 (
   ulimit -u "$limit"
-  AUTOSPAWN_TEST_TMP="$dir" npx stryker run "$@"
+  AUTOSPAWN_TEST_TMP="$dir" AUTOSPAWN_MUTATION_TESTS="$tests" npx stryker run "$@"
 )
 code=$?
 

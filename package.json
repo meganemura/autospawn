@@ -33,6 +33,7 @@
     "@hegeldev/hegel": "0.4.6",
     "@stryker-mutator/core": "10.0.0",
     "@types/node": "24.13.6",
+    "finderscope": "0.2.0",
     "stryker-agent-reporter": "0.1.0",
     "typescript": "7.0.2"
   }

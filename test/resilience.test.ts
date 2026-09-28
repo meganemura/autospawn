@@ -27,7 +27,7 @@ function chainArgs(): string[] {
     cliPath,
     "serve",
     "--idle-timeout",
-    "10",
+    "50",
     "--",
     path.join(fixturesDir, "echo-server"),
   ];
@@ -118,7 +118,7 @@ test("a serve whose socket path is removed, with nothing in its place, exits 0",
   t.after(() => removeStateDir(dir));
 
   // A long idle timeout, so only the ownership check can end it in time.
-  const serve = startServeDirect(sockPath, "test-fingerprint", "echo-server", 60);
+  const serve = startServeDirect(sockPath, "test-fingerprint", "echo-server", 300);
   t.after(() => {
     if (!isDead(serve.pid!)) serve.kill("SIGKILL");
   });
@@ -155,7 +155,7 @@ test("a serve that loses the ownership race steps aside without deleting the win
     timeoutMs: 5000,
   });
 
-  // serveA has zero connections, so its 1s ownership check should notice
+  // serveA has zero connections, so its ownership check should notice
   // and exit on its own, without touching serveB's socket.
   await waitFor(() => isDead(serveA.pid!), { timeoutMs: 5000 });
 

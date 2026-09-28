@@ -11,6 +11,19 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+// serve's second, shortened for the suite. serve runs its ownership check
+// once per second and counts --idle-timeout in seconds, and most of the
+// suite's wall time was spent waiting on those. Every process a test starts
+// inherits this through process.env. A test that waits on one of them uses
+// units(n); a long --idle-timeout that only bounds a leftover resident is
+// scaled up by the same factor, so its real length stays.
+export const TIME_UNIT_MS = 200;
+process.env.AUTOSPAWN_TEST_TIME_UNIT_MS = String(TIME_UNIT_MS);
+
+export function units(n: number): number {
+  return n * TIME_UNIT_MS;
+}
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const cliPath = path.join(here, "..", "src", "cli.ts");
 export const fixturesDir = path.join(here, "fixtures");
@@ -109,7 +122,7 @@ export function startServeDirect(
   sockPath: string,
   fingerprint: string,
   server = "echo-server",
-  idleTimeoutSeconds: number | null = 10,
+  idleTimeoutSeconds: number | null = 50,
   { stderrFd, env }: { stderrFd?: number; env?: NodeJS.ProcessEnv } = {},
 ): ChildProcess {
   const idleArgs = idleTimeoutSeconds === null ? [] : ["--idle-timeout", String(idleTimeoutSeconds)];

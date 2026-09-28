@@ -21,7 +21,7 @@ function chainArgs(server = "echo-server"): string[] {
     cliPath,
     "serve",
     "--idle-timeout",
-    "10",
+    "50",
     "--",
     path.join(fixturesDir, server),
   ];
@@ -212,7 +212,7 @@ test("connect: a spawn-command that is slow to listen is not mistaken for one th
       cliPath,
       "serve",
       "--idle-timeout",
-      "10",
+      "50",
       "--",
       path.join(fixturesDir, "echo-server"),
     ],

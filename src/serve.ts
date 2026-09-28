@@ -72,11 +72,23 @@ function requireEnv(name: string): never {
   process.exit(2);
 }
 
+// The length of serve's second, in milliseconds: the ownership check runs
+// once per second, and --idle-timeout counts in seconds. The test suite
+// sets AUTOSPAWN_TEST_TIME_UNIT_MS to a fraction of a second, so its
+// waits on those two shrink with it. It is not a user option; any value
+// that is not a positive integer leaves the real second.
+export function secondLength(env: NodeJS.ProcessEnv): number {
+  const raw = env.AUTOSPAWN_TEST_TIME_UNIT_MS;
+  const ms = raw === undefined ? NaN : Number(raw);
+  return Number.isInteger(ms) && ms > 0 ? ms : 1000;
+}
+
 export async function serve(
   idleTimeoutSeconds: number | null,
   serverCommand: readonly string[],
   declaredParams: Params = {},
 ): Promise<never> {
+  const secondMs = secondLength(process.env);
   const sockPath: string = process.env.AUTOSPAWN_SOCKET ?? requireEnv("AUTOSPAWN_SOCKET");
   const fingerprint: string =
     process.env.AUTOSPAWN_FINGERPRINT ?? requireEnv("AUTOSPAWN_FINGERPRINT");
@@ -102,7 +114,7 @@ export async function serve(
     idleTimer = setTimeout(() => {
       logLine(`idle for ${idleTimeoutSeconds}s, stopping`);
       void shutdownOwned();
-    }, idleTimeoutSeconds * 1000);
+    }, idleTimeoutSeconds * secondMs);
   }
 
   function cancelIdleCheck(): void {
@@ -277,7 +289,7 @@ export async function serve(
   // chmodSync just succeeded on it. This only narrows the type.
   if (ownership === null) throw new Error(`socket ${sockPath} vanished right after listen`);
   scheduleIdleCheck();
-  setInterval(() => checkOwnership(ownership), 1000);
+  setInterval(() => checkOwnership(ownership), secondMs);
 
   const onSignal = () => {
     if (raceLost) exitWithoutUnlink();

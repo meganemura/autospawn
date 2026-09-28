@@ -8,7 +8,7 @@ import net from "node:net";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { sameOwnership, statOwnership } from "../src/serve.ts";
+import { sameOwnership, secondLength, statOwnership } from "../src/serve.ts";
 import {
   attachRaw,
   exitWithin,
@@ -19,6 +19,7 @@ import {
   runCli,
   sleep,
   startServeDirect,
+  units,
   waitFor,
   waitForListening,
 } from "./helpers.ts";
@@ -87,7 +88,7 @@ test("serve without --idle-timeout keeps running with no connections", async (t)
   const serve = startServeDirect(path.join(dir, "forever.sock"), FINGERPRINT, "echo-server", null);
   killOnCleanup(t, serve);
   await waitFor(() => fs.existsSync(path.join(dir, "forever.sock")), { timeoutMs: 5000 });
-  assert.equal(await exitWithin(serve, 2500), "still running");
+  assert.equal(await exitWithin(serve, units(2.5)), "still running");
 });
 
 test("one connection closing does not start the idle timeout while another is open", async (t) => {
@@ -100,7 +101,7 @@ test("one connection closing does not start the idle timeout while another is op
   const first = await attachRaw(sockPath, FINGERPRINT);
   const second = await attachRaw(sockPath, FINGERPRINT);
   first.end();
-  assert.equal(await exitWithin(serve, 2500), "still running");
+  assert.equal(await exitWithin(serve, units(2.5)), "still running");
 
   second.end();
   assert.deepEqual(await exitWithin(serve, 5000), { code: 0, signal: null });
@@ -122,8 +123,8 @@ test("a connection still sending its header holds off the idle timeout", async (
     sock.once("connect", resolve);
     sock.once("error", reject);
   });
-  // Past the 1s idle timeout, and still inside the 5s header timeout.
-  await sleep(1800);
+  // Past the one-unit idle timeout, and still inside the 5s header timeout.
+  await sleep(units(1.8));
   assert.equal(fs.existsSync(sockPath), true, "the resident must still own its socket");
   sock.end();
 
@@ -135,7 +136,7 @@ test("stop with a client attached ends the child and the resident at once", asyn
   const dir = stateDir(t);
   const sockPath = path.join(dir, "busy.sock");
   // A long idle timeout, so only stop can end it within the test.
-  const serve = startServeDirect(sockPath, FINGERPRINT, "echo-server", 60);
+  const serve = startServeDirect(sockPath, FINGERPRINT, "echo-server", 300);
   killOnCleanup(t, serve);
   await waitForListening(sockPath);
 
@@ -157,18 +158,18 @@ test("a serve that loses its socket logs the loss once, however long it drains",
   const logFd = fs.openSync(logPath, "a");
   t.after(() => fs.closeSync(logFd));
 
-  const serveA = startServeDirect(sockPath, FINGERPRINT, "echo-server", 60, { stderrFd: logFd });
+  const serveA = startServeDirect(sockPath, FINGERPRINT, "echo-server", 300, { stderrFd: logFd });
   killOnCleanup(t, serveA);
   await waitForListening(sockPath);
   const client = await attachRaw(sockPath, FINGERPRINT);
 
   fs.unlinkSync(sockPath);
-  const serveB = startServeDirect(sockPath, FINGERPRINT, "echo-server", 60);
+  const serveB = startServeDirect(sockPath, FINGERPRINT, "echo-server", 300);
   killOnCleanup(t, serveB);
   await waitForListening(sockPath);
 
   // Several ownership checks run while the client keeps serveA draining.
-  await sleep(3500);
+  await sleep(units(3.5));
   const lossLines = fs
     .readFileSync(logPath, "utf8")
     .split("\n")
@@ -213,7 +214,7 @@ async function startedServe(
 ): Promise<{ serve: ChildProcess; sockPath: string; dir: string }> {
   const dir = stateDir(t);
   const sockPath = path.join(dir, `${name}.sock`);
-  const serve = startServeDirect(sockPath, FINGERPRINT, server, 60, opts);
+  const serve = startServeDirect(sockPath, FINGERPRINT, server, 300, opts);
   killOnCleanup(t, serve);
   await waitForListening(sockPath);
   return { serve, sockPath, dir };
@@ -321,13 +322,13 @@ test("a serve that lost its socket waits for its last child, not its first, befo
   const second = await attachRaw(sockPath, FINGERPRINT);
 
   fs.unlinkSync(sockPath);
-  const serveB = startServeDirect(sockPath, FINGERPRINT, "echo-server", 60);
+  const serveB = startServeDirect(sockPath, FINGERPRINT, "echo-server", 300);
   killOnCleanup(t, serveB);
   await waitForListening(sockPath);
-  await sleep(1500);
+  await sleep(units(1.5));
 
   first.end();
-  assert.equal(await exitWithin(serve, 1500), "still running");
+  assert.equal(await exitWithin(serve, units(1.5)), "still running");
   second.end();
   assert.deepEqual(await exitWithin(serve, 5000), { code: 0, signal: null });
 });
@@ -360,11 +361,11 @@ test("SIGTERM to a serve that lost its socket leaves the new resident's socket a
   const client = await attachRaw(sockPath, FINGERPRINT);
   client.on("error", () => {});
   fs.unlinkSync(sockPath);
-  const serveB = startServeDirect(sockPath, FINGERPRINT, "echo-server", 60);
+  const serveB = startServeDirect(sockPath, FINGERPRINT, "echo-server", 300);
   killOnCleanup(t, serveB);
   await waitForListening(sockPath);
   const inodeB = fs.statSync(sockPath).ino;
-  await sleep(1500);
+  await sleep(units(1.5));
   assert.equal(await exitWithin(serveA, 100), "still running");
 
   serveA.kill("SIGTERM");
@@ -379,7 +380,7 @@ test("a second serve on a path where one already listens logs it and steps aside
   const logFd = fs.openSync(logPath, "a");
   t.after(() => fs.closeSync(logFd));
 
-  const second = startServeDirect(sockPath, FINGERPRINT, "echo-server", 60, { stderrFd: logFd });
+  const second = startServeDirect(sockPath, FINGERPRINT, "echo-server", 300, { stderrFd: logFd });
   killOnCleanup(t, second);
   assert.deepEqual(await exitWithin(second, 5000), { code: 0, signal: null });
   assert.match(fs.readFileSync(logPath, "utf8"), /\[serve\] another resident is already listening; exiting/);
@@ -405,7 +406,7 @@ test("a stale socket in a directory serve cannot write ends serve with an error"
 
   fs.chmodSync(dir, 0o500);
   try {
-    const serve = startServeDirect(sockPath, FINGERPRINT, "echo-server", 60);
+    const serve = startServeDirect(sockPath, FINGERPRINT, "echo-server", 300);
     killOnCleanup(t, serve);
     assert.deepEqual(await exitWithin(serve, 5000), { code: 1, signal: null });
   } finally {
@@ -425,8 +426,8 @@ test("a child closing while another connection is still being set up does not st
   attached.end();
   await attachedClosed;
 
-  // Past the 1s idle timeout, with pendingClient still sending no header.
-  await sleep(1800);
+  // Past the one-unit idle timeout, with pendingClient still sending no header.
+  await sleep(units(1.8));
   assert.equal(fs.existsSync(sockPath), true, "the resident must still own its socket");
 
   pendingClient.end();
@@ -437,7 +438,7 @@ test("a directory serve cannot write, with no stale socket in it, ends serve wit
   const dir = stateDir(t);
   fs.chmodSync(dir, 0o500);
   try {
-    const serve = startServeDirect(path.join(dir, "nowrite.sock"), FINGERPRINT, "echo-server", 60);
+    const serve = startServeDirect(path.join(dir, "nowrite.sock"), FINGERPRINT, "echo-server", 300);
     killOnCleanup(t, serve);
     assert.deepEqual(await exitWithin(serve, 5000), { code: 1, signal: null });
   } finally {
@@ -462,4 +463,12 @@ test("a connection that does not ask for frames gets raw output, with nothing af
   const client = await attachRaw(sockPath, FINGERPRINT);
   client.end("raw line\n");
   assert.equal(await readUntilClose(client, 3000), "raw line\n");
+});
+
+test("secondLength: a positive integer shortens serve's second; anything else leaves 1000ms", () => {
+  assert.equal(secondLength({ AUTOSPAWN_TEST_TIME_UNIT_MS: "200" }), 200);
+  assert.equal(secondLength({}), 1000);
+  for (const raw of ["", "0", "-5", "1.5", "abc"]) {
+    assert.equal(secondLength({ AUTOSPAWN_TEST_TIME_UNIT_MS: raw }), 1000, JSON.stringify(raw));
+  }
 });

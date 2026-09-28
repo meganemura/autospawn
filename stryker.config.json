@@ -2,7 +2,7 @@
   "testRunner_comment": "tap-runner 10.0.0 always returns mutantCoverage from its dry run (with static: {}), regardless of the coverageAnalysis setting. Stryker core treats any mutantCoverage as coverage analysis being on, so every mutant that no test touches in-process (which is most of this project: connect/serve/stop run only as spawned subprocesses) is reported NoCoverage and never even run. The command runner has no such shortcut: it reruns the whole suite per mutant and relies on the instrumented preamble reading process.env.__STRYKER_ACTIVE_MUTANT__, which a spawned subprocess inherits, so subprocess-only code is actually exercised.",
   "testRunner": "command",
   "commandRunner": {
-    "command": "node --test"
+    "command": "node --test --test-timeout=10000 --test-force-exit $AUTOSPAWN_MUTATION_TESTS"
   },
   "coverageAnalysis": "off",
   "timeoutMS_comment": "Stryker waits timeoutMS plus 1.5x the dry run time before it counts a mutant as a timeout. A mutant that stops serve from answering always ends that way, so this value sets the cost of each such mutant. 60000 was needed while 9 runners overloaded the machine and an unmutated run could pass the default. With 2 or 3 runners, 15000 gives about 30 seconds per run, and a slow but correct run still fits.",
@@ -25,5 +25,6 @@
     "docs"
   ],
   "tsconfigFile_comment": "TypeScript 7 has no JS API for tsconfig rewriting (stryker-js #6111). tsconfig.json has no extends or references, so the rewrite Stryker's core would do has nothing to change; pointing tsconfigFile at a nonexistent file makes it skip the rewrite instead of crashing.",
-  "tsconfigFile": "stryker-skip-tsconfig-rewrite.json"
+  "tsconfigFile": "stryker-skip-tsconfig-rewrite.json",
+  "commandRunner_comment": "--test-timeout ends a test that a mutant left hanging after 10 seconds, so it counts as killed there instead of waiting for Stryker's own timeout; the longest test takes about 5 seconds. --test-force-exit keeps a handle a mutant left open from holding the run. AUTOSPAWN_MUTATION_TESTS, set by scripts/mutation.sh --tests, limits a run to the listed test files; left empty, node --test runs them all."
 }

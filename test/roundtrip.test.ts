@@ -35,7 +35,7 @@ function chainArgs(server = "echo-server"): string[] {
     // file's t.after() cleanup; --idle-timeout bounds how long any
     // resident it started outlives it.
     "--idle-timeout",
-    "10",
+    "50",
     "--",
     path.join(fixturesDir, server),
   ];
@@ -181,7 +181,7 @@ test("relay: arbitrary binary survives connect -> serve -> echo unchanged", asyn
   const relayChain = chainArgs();
   // One resident, shared across every draw below: each Hegel test case
   // only pays for a fresh `connect` subprocess, not a fresh spawn chain.
-  const resident = startServeDirect(sockPath, fingerprintArgv(relayChain), "echo-server", 30);
+  const resident = startServeDirect(sockPath, fingerprintArgv(relayChain), "echo-server", 150);
   await waitForListening(sockPath);
   t.after(() => {
     if (!isDead(resident.pid!)) resident.kill("SIGTERM");
@@ -215,7 +215,7 @@ function paramChainArgs(): string[] {
     cliPath,
     "serve",
     "--idle-timeout",
-    "10",
+    "50",
     "--param",
     "topic=PROBE_TOPIC",
     "--",

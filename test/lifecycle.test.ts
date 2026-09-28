@@ -10,7 +10,7 @@ import { baseEnv, cliPath, fixturesDir, makeStateDir, removeStateDir, runCli, wa
 // A default --idle-timeout, so a resident this file's own `stop` calls
 // don't reach (a test killed mid-run under mutation testing, for example)
 // exits on its own instead of running forever.
-const DEFAULT_SERVE_ARGS = ["--idle-timeout", "10"];
+const DEFAULT_SERVE_ARGS = ["--idle-timeout", "50"];
 
 function chainArgs(server = "echo-server", serveArgs: string[] = DEFAULT_SERVE_ARGS): string[] {
   return [
@@ -57,7 +57,7 @@ test("--idle-timeout ends the resident once connections drop to zero", async (t)
   });
 
   const connectResult = await runCli(
-    ["connect", "--name", "idlecheck", "--", ...chainArgs("echo-server", ["--idle-timeout", "1"])],
+    ["connect", "--name", "idlecheck", "--", ...chainArgs("echo-server", ["--idle-timeout", "5"])],
     { env, input: "hi\n" },
   );
   assert.equal(connectResult.code, 0, connectResult.stderr);
@@ -77,7 +77,7 @@ test("serve writes its own diagnostics to the chain's log, marked [serve] and ti
   });
 
   const connectResult = await runCli(
-    ["connect", "--name", "servelog", "--", ...chainArgs("echo-server", ["--idle-timeout", "1"])],
+    ["connect", "--name", "servelog", "--", ...chainArgs("echo-server", ["--idle-timeout", "5"])],
     { env, input: "hi\n" },
   );
   assert.equal(connectResult.code, 0, connectResult.stderr);
@@ -87,7 +87,7 @@ test("serve writes its own diagnostics to the chain's log, marked [serve] and ti
   // so its own lines have to arrive there through that descriptor.
   assert.match(
     fs.readFileSync(logPath, "utf8"),
-    /^\d{4}-\d{2}-\d{2}T[\d:.]+Z \[serve\] idle for 1s, stopping$/m,
+    /^\d{4}-\d{2}-\d{2}T[\d:.]+Z \[serve\] idle for 5s, stopping$/m,
   );
 });
 
