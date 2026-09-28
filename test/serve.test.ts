@@ -454,3 +454,12 @@ test("an attach with an undeclared parameter gets a bad_param reply, then a clos
     '{"ok":false,"error":"bad_param","message":"parameter \'topic\' is not declared"}\n',
   );
 });
+
+// A connect from 0.1.0 does not ask for frames, and must get the child's
+// output byte for byte, with no exit frame after it.
+test("a connection that does not ask for frames gets raw output, with nothing after it", async (t) => {
+  const { sockPath } = await startedServe(t, "rawclient");
+  const client = await attachRaw(sockPath, FINGERPRINT);
+  client.end("raw line\n");
+  assert.equal(await readUntilClose(client, 3000), "raw line\n");
+});

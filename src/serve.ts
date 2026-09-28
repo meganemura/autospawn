@@ -310,6 +310,8 @@ function bindListener(server: net.Server, sockPath: string): Promise<void> {
         // closes the probe with everything else.
         probe.destroy();
         logLine("another resident is already listening; exiting");
+        // Stryker disable next-line CallExpression: this serve never listened,
+        // so without the exit nothing keeps it alive, and Node exits 0 anyway.
         process.exit(0);
       });
       // A socket that fails is destroyed already, so there is no destroy

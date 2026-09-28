@@ -311,6 +311,7 @@ for (const [server, code, why] of [
     });
     const result = await runCli(["connect", "--name", name, "--", ...chainArgs(server)], { env, input: "" });
     assert.equal(result.code, code, result.stderr);
+    assert.equal(result.stderr, "");
     assert.equal(result.stdout, server === "no-such-server" ? "" : "out\n");
   });
 }
@@ -365,7 +366,7 @@ test("connect exits 1 when a framed connection closes before the exit frame", as
   const result = await runCli(["connect", "--name", "cutoff", "--", "unused"], { env: baseEnv(dir), input: "" });
   assert.equal(result.code, 1);
   assert.equal(result.stdout, "partial\n");
-  assert.match(result.stderr, /closed before the program's exit status arrived/);
+  assert.equal(result.stderr, "autospawn connect: the connection closed before the program's exit status arrived\n");
 });
 
 test("connect exits 1 with a message on a frame it cannot read", async (t) => {
@@ -378,5 +379,26 @@ test("connect exits 1 with a message on a frame it cannot read", async (t) => {
   });
   const result = await runCli(["connect", "--name", "badframe", "--", "unused"], { env: baseEnv(dir), input: "" });
   assert.equal(result.code, 1);
-  assert.match(result.stderr, /bad frame from the resident: exit frame is not \{code, signal\}/);
+  assert.equal(result.stderr, "autospawn connect: bad frame from the resident: exit frame is not {code, signal}\n");
+});
+
+test("connect skips a frame type it does not know, so a later serve can add one", async (t) => {
+  const dir = makeStateDir();
+  const unknown = Buffer.from([9, 0, 0, 0, 3, 0x61, 0x62, 0x63]);
+  const data = Buffer.from("known\n");
+  const body = Buffer.concat([
+    unknown,
+    Buffer.from([1, 0, 0, 0, data.length]),
+    data,
+    Buffer.from([2, 0, 0, 0, 27]),
+    Buffer.from('{"code":4,"signal":null}   '),
+  ]);
+  const { server } = await fakeResident(path.join(dir, "future.sock"), '{"ok":true,"frames":1}', body);
+  t.after(() => {
+    server.close();
+    removeStateDir(dir);
+  });
+  const result = await runCli(["connect", "--name", "future", "--", "unused"], { env: baseEnv(dir), input: "" });
+  assert.equal(result.code, 4, result.stderr);
+  assert.equal(result.stdout, "known\n");
 });

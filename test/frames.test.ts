@@ -66,3 +66,11 @@ test("exitCodeFor: the child's code, 128 plus a signal's number, and 1 otherwise
   assert.equal(exitCodeFor({ code: 256, signal: null }), 1);
   assert.equal(exitCodeFor({ code: -2, signal: null }), 1);
 });
+
+test("FrameDecoder: the size error says how long the frame claimed to be", () => {
+  const header = Buffer.alloc(5);
+  header.writeUInt32BE(MAX_FRAME_PAYLOAD + 1, 1);
+  assert.throws(() => new FrameDecoder().push(header), {
+    message: `frame of ${MAX_FRAME_PAYLOAD + 1} bytes is over the limit`,
+  });
+});

@@ -64,8 +64,9 @@ export class FrameDecoder {
 export function parseExit(payload: Buffer): ExitStatus {
   const value: unknown = JSON.parse(payload.toString("utf8"));
   const invalid = new FrameError("exit frame is not {code, signal}");
-  // Check the shape before reading a field: JSON.parse can give null.
-  if (typeof value !== "object" || value === null) throw invalid;
+  // null is the one JSON value whose fields cannot be read. A number or a
+  // string reads as having no code and no signal, and fails below.
+  if (value === null) throw invalid;
   const { code, signal } = value as { code?: unknown; signal?: unknown };
   if (!(code === null || Number.isInteger(code))) throw invalid;
   if (!(signal === null || typeof signal === "string")) throw invalid;
