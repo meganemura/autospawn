@@ -6,11 +6,17 @@ release. autospawn stays on 0.x versions for now.
 Version 0.1.0 was published by hand, before the workflow existed. From
 0.2.0 on, pushing a `v*` tag runs
 [`.github/workflows/publish.yml`](../.github/workflows/publish.yml). The
-workflow installs the tagged commit, builds, runs the type check and the
-tests, and runs `npm publish`. npm authenticates with GitHub Actions OIDC
-through a Trusted Publisher, so the repository stores no npm token. The
-GitHub Environment `publish` is the human gate: the job waits there until
-someone approves it.
+workflow's `publish` job installs the tagged commit, builds, runs the
+type check and the tests, and runs `npm publish`. npm authenticates with
+GitHub Actions OIDC through a Trusted Publisher, so the repository stores
+no npm token. The GitHub Environment `publish` is the human gate: that
+job waits there until someone approves it.
+
+After `npm publish` succeeds, the workflow's `release` job creates the
+GitHub release from this version's section of `CHANGELOG.md`. That job is
+the only one with `contents: write`. The `publish` job stays at
+`contents: read` and is the only one with `id-token: write`, so the npm
+OIDC token never sits on a job that can change the repository.
 
 Every `uses:` in a workflow is a full-length 40-hex commit SHA, with the
 version in a trailing comment.
@@ -47,10 +53,12 @@ repository that runs the workflow.
    leading `v` must equal the `package.json` version, or the workflow
    stops. Push the commit and the tag.
 5. Approve the `publish` environment on that Actions run.
-6. Extract the version's section of `CHANGELOG.md`, and create the
-   release from it:
+6. After `npm publish` succeeds, the `release` job creates the GitHub
+   release. It extracts only that version's section (the whole file
+   would carry every version) and skips a release that already exists,
+   so re-running the tag is safe. If that job fails, create it by hand:
 
    ```sh
-   awk '/^## 0.x.0/{f=1;next} /^## /{f=0} f' CHANGELOG.md > notes.md
-   gh release create v0.x.0 --title v0.x.0 --notes-file notes.md
+   awk '/^## 0.x.0 /{f=1;next} /^## /{f=0} f' CHANGELOG.md > notes.md
+   gh release create v0.x.0 --title v0.x.0 --notes-file notes.md --verify-tag
    ```

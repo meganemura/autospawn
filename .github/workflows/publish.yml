@@ -1,5 +1,7 @@
 # Publishes the npm package for a v* tag.
 # Boundary: checkout the tag, run the release checks, and npm publish.
+# A second job then creates the GitHub release. It is separate so
+# contents:write never sits on the job that holds the npm OIDC token.
 # The GitHub Environment `publish` approves the run. npm authenticates
 # with that environment's OIDC token.
 name: Publish
@@ -69,3 +71,31 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm publish
+
+  # Runs only after npm publish succeeds. A separate job keeps contents:write
+  # away from the job that holds the npm OIDC token.
+  release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Create the GitHub release from this version's changelog section
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # --notes-file CHANGELOG.md would carry every version, so extract only this one.
+          awk -v v="$version" '$0 ~ "^## " v " " {in_version=1; next} /^## /{in_version=0} in_version' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "CHANGELOG.md has no section for ${version}" >&2
+            exit 1
+          fi
+          # A re-run of the same tag must not fail on a release that already exists.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "release ${GITHUB_REF_NAME} already exists"
+            exit 0
+          fi
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
