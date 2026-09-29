@@ -26,5 +26,7 @@ jobs:
           package-manager-cache: false
       - run: npm ci
       - run: npm run typecheck
+      # Module boundaries between the flat files under src/.
+      - run: npm run archstrict
       # scripts/test.sh runs the suite under a process limit.
       - run: npm test

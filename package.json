@@ -15,6 +15,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && chmod +x dist/cli.js",
     "typecheck": "tsc --noEmit",
+    "archstrict": "archstrict check",
     "test": "sh scripts/test.sh",
     "mutation": "sh scripts/mutation.sh",
     "prepublishOnly": "npm run typecheck && npm test"
@@ -33,6 +34,7 @@
     "@hegeldev/hegel": "0.4.6",
     "@stryker-mutator/core": "10.0.0",
     "@types/node": "24.13.6",
+    "archstrict": "0.1.0",
     "finderscope": "0.2.0",
     "stryker-agent-reporter": "0.1.0",
     "typescript": "7.0.2"
