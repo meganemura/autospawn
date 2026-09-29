@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- `serve --arg key=v1,v2,...` declares a key and the values a connection
+  may choose for it. The chosen value replaces `{key}` in the server
+  command. Unlike `--param`, it never sets an environment variable. See
+  ADR 0010.
+
 ## 0.2.0 (2026-09-28)
 
 - serve closes a connection that ends its side before sending a header at

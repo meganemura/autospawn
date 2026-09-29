@@ -1,0 +1,11 @@
+#!/bin/sh
+# Prints its own argv, bracketed like echo-server-argprobe, then the
+# PROBE_TOPIC environment variable on its own line, so one test can check
+# a --param value reaches only the env and an --arg value reaches only
+# argv, on a single serve that declares both.
+for arg in "$@"; do
+  printf '[%s]' "$arg"
+done
+printf '\n'
+printf 'topic:%s\n' "${PROBE_TOPIC:-unset}"
+exec cat

@@ -1,5 +1,7 @@
 // Responsibility: listen on the resident's socket, hand each connection its
-// own copy of server-command over stdio, and relay bytes between them.
+// own copy of server-command over stdio (with any --arg placeholders
+// replaced by that connection's chosen values), and relay bytes between
+// them.
 //
 // Not done here: opening a log file. The chain that started this process
 // (spawn-chain.ts) already redirected its own stdout/stderr to the log file
@@ -14,7 +16,13 @@ import fs from "node:fs";
 import net, { type Socket } from "node:net";
 import path from "node:path";
 import { encodeExit, encodeFrame, FRAME_DATA } from "./frames.ts";
-import { childParamEnv, type Params } from "./params.ts";
+import {
+  childParamEnv,
+  resolveDeclaredArgs,
+  substituteServerCommand,
+  type ArgValues,
+  type Params,
+} from "./params.ts";
 import { ensureBaseDir } from "./paths.ts";
 import {
   encodeLine,
@@ -87,6 +95,7 @@ export async function serve(
   idleTimeoutSeconds: number | null,
   serverCommand: readonly string[],
   declaredParams: Params = {},
+  declaredArgs: ArgValues = {},
 ): Promise<never> {
   const secondMs = secondLength(process.env);
   const sockPath: string = process.env.AUTOSPAWN_SOCKET ?? requireEnv("AUTOSPAWN_SOCKET");
@@ -199,7 +208,24 @@ export async function serve(
       return;
     }
 
-    const paramEnv = childParamEnv(header.params ?? {}, declaredParams);
+    const attachParams = header.params ?? {};
+    const argValues = resolveDeclaredArgs(attachParams, declaredArgs);
+    if (!argValues.ok) {
+      await writeLine(socket, errReply("bad_param", argValues.error));
+      socket.destroy();
+      return;
+    }
+    // Keys resolveDeclaredArgs already accounted for go to argv, not env;
+    // childParamEnv below only ever sees the rest, so an --arg key never
+    // hits its "not declared" branch and a --param key never reaches argv.
+    // Object.fromEntries, not an assignment into a plain {}, so a key
+    // named "__proto__" (attachParams comes from JSON.parse, which can
+    // produce one as an own property) becomes an own property here too,
+    // instead of silently hitting the prototype's setter and vanishing.
+    const envParams = Object.fromEntries(
+      Object.entries(attachParams).filter(([key]) => !Object.hasOwn(declaredArgs, key)),
+    );
+    const paramEnv = childParamEnv(envParams, declaredParams);
     if (!paramEnv.ok) {
       await writeLine(socket, errReply("bad_param", paramEnv.error));
       socket.destroy();
@@ -209,7 +235,8 @@ export async function serve(
     // Frame only when connect asks: a connect from 0.1.0 reads raw bytes.
     const framed = header.frames === 1;
     await writeLine(socket, framed ? { ok: true, frames: 1 } : { ok: true });
-    spawnChild(socket, paramEnv.value, framed);
+    const commandArgv = substituteServerCommand(serverCommand, argValues.value);
+    spawnChild(socket, paramEnv.value, framed, commandArgv);
     // readHeaderLine paused the socket once it found the header line;
     // spawnChild has now attached the relay listeners, so it is safe to
     // let bytes flow again.
@@ -220,8 +247,9 @@ export async function serve(
     socket: Socket,
     paramEnv: Readonly<Record<string, string>>,
     framed: boolean,
+    commandArgv: readonly string[],
   ): void {
-    const [cmd, ...args] = serverCommand;
+    const [cmd, ...args] = commandArgv;
     // stdio defaults to three pipes. A command that cannot start reports it
     // through the "error" event below, not a throw; spawn throws only for
     // arguments argv cannot carry, such as a NUL byte, and the catch around

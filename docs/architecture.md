@@ -68,7 +68,11 @@ gets a `fingerprint_mismatch` reply, before the connection closes. An
 attach always carries `params`, empty when connect got no `--param`; a
 serve from 0.1.0, which has no `--param`, ignores the field. A key that
 serve did not declare, or a value with a control character or over 4096
-bytes, gets a `bad_param` reply (see ADR 0008).
+bytes, gets a `bad_param` reply (see ADR 0008). The same `params` field
+also carries a connection's choice for each key `serve` declared with
+`--arg`. A value outside that key's enumerated list also gets
+`bad_param`. So does a declared key `params` does not carry at all (see
+ADR 0010).
 
 Bytes that arrive after that first `\n` in the same read are put back on
 the socket before either side treats the connection as a plain byte
@@ -186,8 +190,10 @@ alone, since it was verified that no cleanup call runs for a plain
 
 - `serve` checks the base directory, binds and starts listening, then
   chmods the socket to 0600.
-- Each connection spawns one server-command child; the socket and the
-  child's stdio are wired together until either side closes.
+- Each connection spawns one server-command child, with any `--arg`
+  placeholders in argv replaced by that connection's chosen values
+  (ADR 0010); the socket and the child's stdio are wired together until
+  either side closes.
 - `stop`, SIGTERM, and SIGINT all run the same shutdown: SIGTERM every
   child, then `server.close()` (which unlinks the resident's own socket,
   since it still owns the path at that point), then exit 0.

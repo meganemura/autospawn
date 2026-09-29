@@ -295,6 +295,137 @@ test("--param: serve refuses to declare a variable its environment already holds
   assert.match(result.stderr, /would replace HOME, which is already set/);
 });
 
+// --arg (ADR 0010): the resident chooses among enumerated values a
+// connection sends, and substitutes them into the server command's argv --
+// one resident, one wrapper run, six fingerprint-equal call shapes, in the
+// spirit of the hook example in the ADR.
+function argChainArgs(): string[] {
+  return [
+    path.join(fixturesDir, "fake-wrapper"),
+    process.execPath,
+    cliPath,
+    "serve",
+    "--idle-timeout",
+    "50",
+    "--arg",
+    "event=session-start,stop",
+    "--arg",
+    "host=claude,cursor,codex",
+    "--",
+    path.join(fixturesDir, "echo-server-argprobe"),
+    "hook",
+    "{event}",
+    "--host={host}",
+  ];
+}
+
+test("--arg: two connects with different values share one resident, and each child gets its own argv", async (t) => {
+  const dir = makeStateDir();
+  const countFile = path.join(dir, "count");
+  const env = { ...baseEnv(dir), FAKE_WRAPPER_COUNT_FILE: countFile };
+  t.after(async () => {
+    await runCli(["stop", "--name", "args"], { env });
+    removeStateDir(dir);
+  });
+
+  const connectWith = (event: string, host: string) =>
+    runCli(
+      ["connect", "--name", "args", "--param", `event=${event}`, "--param", `host=${host}`, "--", ...argChainArgs()],
+      { env, input: "" },
+    );
+
+  const first = await connectWith("stop", "claude");
+  assert.equal(first.code, 0, first.stderr);
+  assert.equal(first.stdout, "[hook][stop][--host=claude]\n");
+
+  const second = await connectWith("session-start", "codex");
+  assert.equal(second.code, 0, second.stderr);
+  assert.equal(second.stdout, "[hook][session-start][--host=codex]\n");
+
+  assert.equal(fs.readFileSync(countFile, "utf8").length, 1, "wrapper should run exactly once");
+});
+
+test("--arg: a value outside the enumeration is refused with bad_param", async (t) => {
+  const dir = makeStateDir();
+  const env = baseEnv(dir);
+  t.after(async () => {
+    await runCli(["stop", "--name", "argunlisted"], { env });
+    removeStateDir(dir);
+  });
+
+  const result = await runCli(
+    [
+      "connect",
+      "--name",
+      "argunlisted",
+      "--param",
+      "event=other",
+      "--param",
+      "host=claude",
+      "--",
+      ...argChainArgs(),
+    ],
+    { env, input: "" },
+  );
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /bad_param: parameter 'event' is not one of its declared values/);
+});
+
+test("--arg: a connect that omits a declared key is refused with bad_param", async (t) => {
+  const dir = makeStateDir();
+  const env = baseEnv(dir);
+  t.after(async () => {
+    await runCli(["stop", "--name", "argmissing"], { env });
+    removeStateDir(dir);
+  });
+
+  const result = await runCli(
+    ["connect", "--name", "argmissing", "--param", "event=stop", "--", ...argChainArgs()],
+    { env, input: "" },
+  );
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /bad_param: parameter 'host' is required/);
+});
+
+// Startup checks (ADR 0010): serve refuses to bind rather than run with an
+// --arg declaration that cannot do what the config writer intended.
+const serveArgEnv = { ...process.env, AUTOSPAWN_SOCKET: "/nonexistent/x.sock", AUTOSPAWN_FINGERPRINT: "f" };
+
+for (const [args, pattern, why] of [
+  [["--arg", "event="], /empty value/, "an empty value"],
+  [["--arg", "event=a,,b"], /empty value/, "an empty value in the middle of the list"],
+  [["--arg", "event=a,"], /empty value/, "a trailing comma"],
+  [["--arg", "event=a,a"], /lists the value 'a' twice/, "a duplicate value"],
+  [["--arg", "event=a", "--arg", "event=b"], /declared twice/, "the same key declared twice"],
+  [
+    ["--param", "event=EVENT", "--arg", "event=a"],
+    /already declared by --param/,
+    "a key declared by both --param and --arg",
+  ],
+] as const) {
+  test(`serve --arg startup check: rejects ${why}`, async () => {
+    const result = await runCli(["serve", ...args, "--", path.join(fixturesDir, "echo-server")], {
+      env: serveArgEnv,
+    });
+    assert.equal(result.code, 2, result.stderr);
+    assert.match(result.stderr, pattern);
+  });
+}
+
+test("serve --arg startup check: rejects a declared key in the command itself", async () => {
+  const result = await runCli(["serve", "--arg", "event=a", "--", "{event}"], { env: serveArgEnv });
+  assert.equal(result.code, 2, result.stderr);
+  assert.match(result.stderr, /server command's first word/);
+});
+
+test("serve --arg startup check: rejects a declared key absent from the server command", async () => {
+  const result = await runCli(["serve", "--arg", "event=a", "--", path.join(fixturesDir, "echo-server"), "hook"], {
+    env: serveArgEnv,
+  });
+  assert.equal(result.code, 2, result.stderr);
+  assert.match(result.stderr, /does not appear in the server command/);
+});
+
 // Exit status (ADR 0009): connect exits the way the child did.
 for (const [server, code, why] of [
   ["exit3", 3, "the child's own code"],

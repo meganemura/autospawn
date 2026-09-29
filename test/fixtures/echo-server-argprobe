@@ -1,0 +1,10 @@
+#!/bin/sh
+# Prints each of its own arguments wrapped in brackets, one line, so a test
+# can see the exact argv a serve --arg substitution produced (element
+# boundaries survive a value with a space in it), then relays stdin to
+# stdout like echo-server.
+for arg in "$@"; do
+  printf '[%s]' "$arg"
+done
+printf '\n'
+exec cat

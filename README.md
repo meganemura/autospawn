@@ -163,7 +163,7 @@ gives 128 plus the signal's number, and a program that cannot start gives
 arrives gives 1. A resident started by autospawn 0.1.0 does not send the
 status; with one, connect exits 0.
 
-### `autospawn serve [--idle-timeout <seconds>] [--param <key>=<ENV_NAME>]... -- <command...>`
+### `autospawn serve [--idle-timeout <seconds>] [--param <key>=<ENV_NAME>]... [--arg <key>=<value>[,<value>...]]... -- <command...>`
 
 Listens on the resident's socket and starts `<command...>` as a fresh child
 for every connection it accepts. Only `connect` starts `serve`; running it
@@ -171,7 +171,10 @@ directly fails, since it needs environment variables that `connect` sets.
 With `--idle-timeout`, serve exits once it has had no running children,
 and no connection being set up, for that many seconds. Without it, serve
 runs until stopped. `--param` declares a key that connections may send,
-and the environment variable it sets in that connection's child.
+and the environment variable it sets in that connection's child. `--arg`
+declares a key and the values a connection may choose for it; each one
+replaces a `{key}` in `<command...>` (see "Enumerated argument values"
+below).
 
 ### `autospawn stop --name <name>`
 
@@ -209,6 +212,42 @@ serve refuses:
 
 The program still has to treat a value as untrusted input.
 
+## Enumerated argument values
+
+Some programs take a value as an argument, not an environment variable.
+They have no other way to receive it: a tool that agents call once per
+event, and once per client that hosts it, is one example.
+
+```sh
+autospawn connect --name example-hook --param event=stop --param host=claude -- \
+  /usr/bin/env EXAMPLE_URL="op://Private/example-api/url" op run -- \
+  autospawn serve --arg event=session-start,stop --arg host=claude,cursor,codex -- \
+  example-tool hook '{event}' '--host={host}'
+```
+
+`serve --arg event=session-start,stop` declares the key `event`, with two
+values a connection may choose. `--arg host=claude,cursor,codex` does the
+same for `host`. Each `{event}` and `{host}` in the server command is
+replaced with the value that connection's `--param` sent. The enumerated
+values are part of the fingerprint. Because of that, a connection can
+only ever produce one of the six command lines this config already
+names.
+
+serve also refuses, at startup, before it binds its socket:
+
+- a declared key that appears in the command itself, since that would let
+  a caller choose which program runs;
+- a declared key that appears nowhere else in the command, since it is
+  very likely a typo.
+
+An attach that omits a declared key gets a `bad_param` reply. So does one
+that sends a value outside its enumerated list; a bad `--param` value
+gets the same reply. An `--arg` value never reaches the child's
+environment, and a `--param` value never reaches its command line.
+
+See [ADR 0010](docs/adr/0010-arg-enumerated-values.md) for why a value
+must come from a short, fixed list, not any value a connection sends.
+
 ## Files
 
 autospawn keeps a socket, a log file, and a spawn lock per name, under a
@@ -244,11 +283,12 @@ the new value.
 Any process running as your user that can reach `<base>/<name>.sock` can
 attach to the resident. The resident then starts its configured program
 for that process, in an environment that holds the secrets a wrapper like
-`op run` resolved. The caller cannot change the program or its arguments,
-but it can use the program in the same way you do, and it can choose the
-values of the parameters that `serve` declares. The base directory's
-permission check keeps other users out; it does not distinguish between
-your own processes.
+`op run` resolved. The caller cannot choose the program. It can use the
+program in the same way you do, it can choose the values of the
+parameters that `serve` declares, and for an argument, it can choose only
+among the values `--arg` enumerates. The base directory's permission
+check keeps other users out; it does not distinguish between your own
+processes.
 
 ## Design
 

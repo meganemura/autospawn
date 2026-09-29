@@ -210,7 +210,7 @@ async function startedServe(
   t: TestContext,
   name: string,
   server = "echo-server",
-  opts: { stderrFd?: number; env?: NodeJS.ProcessEnv } = {},
+  opts: { stderrFd?: number; env?: NodeJS.ProcessEnv; serveArgs?: string[]; commandArgs?: string[] } = {},
 ): Promise<{ serve: ChildProcess; sockPath: string; dir: string }> {
   const dir = stateDir(t);
   const sockPath = path.join(dir, `${name}.sock`);
@@ -218,6 +218,40 @@ async function startedServe(
   killOnCleanup(t, serve);
   await waitForListening(sockPath);
   return { serve, sockPath, dir };
+}
+
+// Sends an attach with params, over a raw socket, and returns everything
+// the resident sends back until it closes the connection -- for the
+// --arg bad_param cases below, which attachRaw cannot drive since it never
+// sends params.
+async function attachWithParams(
+  sockPath: string,
+  params: Record<string, string>,
+): Promise<string | "still open"> {
+  const sock = await openRaw(sockPath);
+  sock.write(JSON.stringify({ v: 1, op: "attach", fingerprint: FINGERPRINT, params }) + "\n");
+  return readUntilClose(sock, 3000);
+}
+
+// Like attachRaw, but sends params, for a --arg value the resident is
+// expected to accept: the caller keeps the socket to talk to the child.
+async function attachRawWithParams(sockPath: string, params: Record<string, string>): Promise<net.Socket> {
+  const sock = await openRaw(sockPath);
+  sock.write(JSON.stringify({ v: 1, op: "attach", fingerprint: FINGERPRINT, params }) + "\n");
+  const reply = await new Promise<string>((resolve, reject) => {
+    let buf = "";
+    const onData = (chunk: Buffer) => {
+      buf += chunk.toString("utf8");
+      const idx = buf.indexOf("\n");
+      if (idx === -1) return;
+      sock.removeListener("data", onData);
+      resolve(buf.slice(0, idx));
+    };
+    sock.on("data", onData);
+    sock.once("error", reject);
+  });
+  if (reply !== '{"ok":true}') throw new Error(`attach refused: ${reply}`);
+  return sock;
 }
 
 test("a header that is not JSON gets its connection closed without a reply", async (t) => {
@@ -453,6 +487,98 @@ test("an attach with an undeclared parameter gets a bad_param reply, then a clos
   assert.equal(
     await readUntilClose(sock, 3000),
     '{"ok":false,"error":"bad_param","message":"parameter \'topic\' is not declared"}\n',
+  );
+});
+
+// A serve that also declares --arg keys builds a filtered copy of
+// header.params before checking it against --param's declarations. An
+// object literal cannot carry an own "__proto__" (it sets the prototype
+// instead), so this header is written as a string, the way JSON.parse
+// from a real attacker-controlled header would produce one.
+test("an attach with an --arg declared serve still rejects an undeclared '__proto__' key, not just any other key", async (t) => {
+  const { sockPath } = await startedServe(t, "protoparam", "echo-server-argprobe", {
+    serveArgs: ["--arg", "event=stop"],
+    commandArgs: ["{event}"],
+  });
+  const sock = await openRaw(sockPath);
+  sock.write(`{"v":1,"op":"attach","fingerprint":"${FINGERPRINT}","params":{"event":"stop","__proto__":"x"}}\n`);
+  assert.equal(
+    await readUntilClose(sock, 3000),
+    '{"ok":false,"error":"bad_param","message":"parameter \'__proto__\' is not declared"}\n',
+  );
+});
+
+// --arg (ADR 0010): a value outside the enumeration, or missing, gets
+// bad_param the same way an undeclared --param key does.
+test("an attach with an --arg value not in the enumeration gets a bad_param reply, then a close", async (t) => {
+  const { sockPath } = await startedServe(t, "argnotlisted", "echo-server-argprobe", {
+    serveArgs: ["--arg", "event=stop,session-start"],
+    commandArgs: ["{event}"],
+  });
+  assert.equal(
+    await attachWithParams(sockPath, { event: "other" }),
+    '{"ok":false,"error":"bad_param","message":"parameter \'event\' is not one of its declared values"}\n',
+  );
+});
+
+test("an attach missing a required --arg value gets a bad_param reply, then a close", async (t) => {
+  const { sockPath } = await startedServe(t, "argmissing", "echo-server-argprobe", {
+    serveArgs: ["--arg", "event=stop,session-start"],
+    commandArgs: ["{event}"],
+  });
+  assert.equal(
+    await attachWithParams(sockPath, {}),
+    '{"ok":false,"error":"bad_param","message":"parameter \'event\' is required"}\n',
+  );
+});
+
+// The substituted value lands in argv, never the environment, and it
+// reaches the child in its own element even when it holds a space.
+test("--arg substitutes into the server command's argv, one value per connection", async (t) => {
+  const { sockPath } = await startedServe(t, "argsubst", "echo-server-argprobe", {
+    serveArgs: ["--arg", "event=stop,session-start", "--arg", "host=claude,cursor"],
+    commandArgs: ["hook", "{event}", "--host={host}"],
+  });
+  const client = await attachRawWithParams(sockPath, { event: "session-start", host: "claude" });
+  client.end();
+  assert.equal(await readUntilClose(client, 3000), "[hook][session-start][--host=claude]\n");
+});
+
+// A value with a space still lands as one argv element: the bracketed
+// output would show two elements if it had been split on whitespace.
+test("--arg: a value with a space stays inside its own argv element", async (t) => {
+  const { sockPath } = await startedServe(t, "argspace", "echo-server-argprobe", {
+    serveArgs: ["--arg", "note=one two,three"],
+    commandArgs: ["{note}"],
+  });
+  const client = await attachRawWithParams(sockPath, { note: "one two" });
+  client.end();
+  assert.equal(await readUntilClose(client, 3000), "[one two]\n");
+});
+
+// --param and --arg on the same serve: a --param key's placeholder-shaped
+// text stays literal in argv, and its value reaches only the environment;
+// an --arg key's value reaches only argv.
+test("--param and --arg together: a --param value reaches only the env, and a --arg value reaches only argv", async (t) => {
+  const { sockPath } = await startedServe(t, "mixed", "echo-server-argenvprobe", {
+    serveArgs: ["--param", "topic=PROBE_TOPIC", "--arg", "event=stop,session-start"],
+    // "{topic}" names a --param key, not a declared --arg key, so it must
+    // stay literal here.
+    commandArgs: ["{event}", "{topic}"],
+  });
+  const client = await attachRawWithParams(sockPath, { topic: "proj-a", event: "stop" });
+  client.end();
+  assert.equal(await readUntilClose(client, 3000), "[stop][{topic}]\ntopic:proj-a\n");
+});
+
+test("an attach that sends an undeclared key alongside a mix of --param and --arg still gets bad_param", async (t) => {
+  const { sockPath } = await startedServe(t, "mixedundeclared", "echo-server-argprobe", {
+    serveArgs: ["--param", "topic=PROBE_TOPIC", "--arg", "event=stop,session-start"],
+    commandArgs: ["{event}"],
+  });
+  assert.equal(
+    await attachWithParams(sockPath, { topic: "proj-a", event: "stop", other: "x" }),
+    '{"ok":false,"error":"bad_param","message":"parameter \'other\' is not declared"}\n',
   );
 });
 

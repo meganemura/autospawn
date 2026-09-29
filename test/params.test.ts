@@ -4,10 +4,14 @@ import * as hegel from "@hegeldev/hegel";
 import * as gs from "@hegeldev/hegel/generators";
 import { takeRepeated } from "../src/args.ts";
 import {
+  checkServeArgsCommand,
   childParamEnv,
   MAX_VALUE_BYTES,
   parseConnectParams,
+  parseServeArgs,
   parseServeParams,
+  resolveDeclaredArgs,
+  substituteServerCommand,
   valueError,
 } from "../src/params.ts";
 import { isAttachHeader } from "../src/protocol.ts";
@@ -137,3 +141,103 @@ test("isAttachHeader: params that are not an object of strings are refused", () 
   assert.equal(isAttachHeader({ ...base, params: 5 }), false);
   assert.equal(isAttachHeader({ ...base, params: { a: "x", b: 1 } }), false);
 });
+
+// --arg (ADR 0010): serve declares a key and an enumerated set of values;
+// an attach picks one of them, and it lands in the server command's argv,
+// not the environment.
+
+test("parseServeArgs: splits each declaration's values on ','", () => {
+  assert.deepEqual(parseServeArgs(["event=stop,session-start", "host=claude"], {}), {
+    ok: true,
+    value: { event: ["stop", "session-start"], host: ["claude"] },
+  });
+});
+
+test("parseServeArgs: refuses a bad key, an empty value, a duplicate value, a key declared twice, and a key --param already declared", () => {
+  const cases: [string[], Record<string, string>, RegExp][] = [
+    [["Bad=x"], {}, /invalid parameter name/],
+    [["event"], {}, /not key=value/],
+    [["event="], {}, /empty value/],
+    [["event=stop,"], {}, /empty value/],
+    [["event=stop,stop"], {}, /lists the value 'stop' twice/],
+    [["event=stop", "event=cont"], {}, /declared twice/],
+    [["event=stop"], { event: "EVENT" }, /already declared by --param/],
+  ];
+  for (const [pairs, declaredParams, pattern] of cases) {
+    const result = parseServeArgs(pairs, declaredParams);
+    assert.equal(result.ok, false, JSON.stringify(pairs));
+    if (!result.ok) assert.match(result.error, pattern);
+  }
+});
+
+test("parseServeArgs: a value with a control character or over 4096 bytes fails the same valueError check --param uses", () => {
+  assert.equal(parseServeArgs(["event=a\u0001b"], {}).ok, false);
+  assert.equal(parseServeArgs([`event=${"a".repeat(4097)}`], {}).ok, false);
+});
+
+test("checkServeArgsCommand: refuses a declared key in the command itself, and one absent from the rest", () => {
+  const declared = { event: ["stop", "session-start"] };
+  assert.deepEqual(checkServeArgsCommand(declared, ["tool", "{event}"]), { ok: true, value: true });
+  const inCommand = checkServeArgsCommand(declared, ["{event}", "hook"]);
+  assert.equal(inCommand.ok, false);
+  if (!inCommand.ok) assert.match(inCommand.error, /server command's first word/);
+  const missing = checkServeArgsCommand(declared, ["tool", "hook"]);
+  assert.equal(missing.ok, false);
+  if (!missing.ok) assert.match(missing.error, /does not appear in the server command/);
+});
+
+test("checkServeArgsCommand: a key used more than once, or alongside literal text in one token, is still found", () => {
+  const declared = { event: ["stop"] };
+  assert.equal(checkServeArgsCommand(declared, ["tool", "--flag={event}"]).ok, true);
+  assert.equal(checkServeArgsCommand(declared, ["tool", "{event}", "{event}"]).ok, true);
+});
+
+test("resolveDeclaredArgs: a value in the enumeration resolves; a missing key is required; an unlisted value is refused", () => {
+  const declared = { event: ["stop", "session-start"] };
+  assert.deepEqual(resolveDeclaredArgs({ event: "stop" }, declared), { ok: true, value: { event: "stop" } });
+  const missing = resolveDeclaredArgs({}, declared);
+  assert.equal(missing.ok, false);
+  if (!missing.ok) assert.match(missing.error, /'event' is required/);
+  const unlisted = resolveDeclaredArgs({ event: "other" }, declared);
+  assert.equal(unlisted.ok, false);
+  if (!unlisted.ok) assert.match(unlisted.error, /'event' is not one of its declared values/);
+});
+
+test("resolveDeclaredArgs: a value is accepted exactly when it is a member of its key's enumeration", () =>
+  hegel.test((tc) => {
+    const enumeration = tc.draw(gs.arrays(gs.sampledFrom(["a", "b", "c", "d"]), { minSize: 1, maxSize: 4 }));
+    const declared = { k: enumeration };
+    const candidate = tc.draw(gs.sampledFrom(["a", "b", "c", "d", "e"]));
+    const result = resolveDeclaredArgs({ k: candidate }, declared);
+    assert.equal(result.ok, enumeration.includes(candidate), JSON.stringify({ enumeration, candidate }));
+  }));
+
+test("substituteServerCommand: replaces a declared key everywhere it appears, and leaves an undeclared '{...}' untouched", () => {
+  assert.deepEqual(
+    substituteServerCommand(["tool", "{event}", "--host={host}", "{unknown}"], { event: "stop", host: "claude" }),
+    ["tool", "stop", "--host=claude", "{unknown}"],
+  );
+});
+
+test("substituteServerCommand: several keys, or one key twice, in a single token all resolve", () => {
+  assert.deepEqual(substituteServerCommand(["{a}-{b}", "{a}{a}"], { a: "x", b: "y" }), ["x-y", "xx"]);
+});
+
+test("substituteServerCommand: a value with a space stays inside its own argv element", () => {
+  assert.deepEqual(substituteServerCommand(["tool", "{note}"], { note: "one two" }), ["tool", "one two"]);
+});
+
+test("substituteServerCommand: one pass -- a value that looks like another placeholder is not substituted again", () => {
+  assert.deepEqual(substituteServerCommand(["{a}"], { a: "{b}", b: "x" }), ["{b}"]);
+});
+
+test("substituteServerCommand: token count and non-placeholder tokens are unchanged", () =>
+  hegel.test((tc) => {
+    const values = tc.draw(gs.record({ k: gs.sampledFrom(["a", "b", "c"]) }));
+    const tokens = tc.draw(gs.arrays(gs.sampledFrom(["{k}", "plain", "--flag={k}"]), { minSize: 0, maxSize: 5 }));
+    const out = substituteServerCommand(tokens, values);
+    assert.equal(out.length, tokens.length);
+    for (const [i, token] of tokens.entries()) {
+      if (token === "plain") assert.equal(out[i], "plain");
+    }
+  }));

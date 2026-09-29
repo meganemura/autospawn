@@ -11,7 +11,12 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseFlags, parsePositiveInt, splitOnDoubleDash, takeRepeated, type ParseResult } from "./args.ts";
 import { connect } from "./connect.ts";
-import { parseConnectParams, parseServeParams } from "./params.ts";
+import {
+  checkServeArgsCommand,
+  parseConnectParams,
+  parseServeArgs,
+  parseServeParams,
+} from "./params.ts";
 import { validateName } from "./paths.ts";
 import { serve } from "./serve.ts";
 import { runSpawnChain } from "./spawn-chain.ts";
@@ -21,7 +26,8 @@ const USAGE = `usage: autospawn <command> [options]
 
 commands:
   connect --name <name> [--timeout <seconds>] [--param <key>=<value>]... -- <spawn-command...>
-  serve [--idle-timeout <seconds>] [--param <key>=<ENV_NAME>]... -- <server-command...>
+  serve [--idle-timeout <seconds>] [--param <key>=<ENV_NAME>]...
+        [--arg <key>=<value>[,<value>...]]... -- <server-command...>
   stop --name <name>
 
   -h, --help     show this message
@@ -79,13 +85,16 @@ async function main(argv: string[]): Promise<void> {
 
   if (command === "serve") {
     const { before, after } = orUsageError(splitOnDoubleDash(rest));
-    const taken = orUsageError(takeRepeated(before, "--param"));
-    const declared = orUsageError(parseServeParams(taken.values, process.env));
-    const flags = orUsageError(parseFlags(taken.rest, { "--idle-timeout": "string" }));
+    const paramsTaken = orUsageError(takeRepeated(before, "--param"));
+    const declared = orUsageError(parseServeParams(paramsTaken.values, process.env));
+    const argsTaken = orUsageError(takeRepeated(paramsTaken.rest, "--arg"));
+    const declaredArgs = orUsageError(parseServeArgs(argsTaken.values, declared));
+    orUsageError(checkServeArgsCommand(declaredArgs, after));
+    const flags = orUsageError(parseFlags(argsTaken.rest, { "--idle-timeout": "string" }));
     const idleTimeout = flags["--idle-timeout"]
       ? orUsageError(parsePositiveInt(flags["--idle-timeout"], "--idle-timeout"))
       : null;
-    await serve(idleTimeout, after, declared);
+    await serve(idleTimeout, after, declared, declaredArgs);
     return;
   }
 
