@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-09-29)
 
 - `serve --arg key=v1,v2,...` declares a key and the values a connection
   may choose for it. The chosen value replaces `{key}` in the server
